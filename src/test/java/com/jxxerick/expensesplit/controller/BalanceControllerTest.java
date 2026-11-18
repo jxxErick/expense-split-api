@@ -31,8 +31,10 @@ class BalanceControllerTest {
     @Test
     void returnsBalances() throws Exception {
         when(balanceService.balances(1L)).thenReturn(List.of(
-                new BalanceResponse(1L, "Ana", new BigDecimal("50.00"), new BigDecimal("25.00"), new BigDecimal("25.00")),
-                new BalanceResponse(2L, "Bruno", new BigDecimal("0.00"), new BigDecimal("25.00"), new BigDecimal("-25.00"))));
+                new BalanceResponse(1L, "Ana", new BigDecimal("50.00"), new BigDecimal("25.00"),
+                        BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("25.00")),
+                new BalanceResponse(2L, "Bruno", new BigDecimal("0.00"), new BigDecimal("25.00"),
+                        BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("-25.00"))));
 
         mvc.perform(get("/api/groups/1/balances"))
                 .andExpect(status().isOk())

@@ -1,0 +1,13 @@
+package com.jxxerick.expensesplit.repository;
+
+import com.jxxerick.expensesplit.model.Settlement;
+import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.List;
+
+public interface SettlementRepository extends JpaRepository<Settlement, Long> {
+
+    @EntityGraph(attributePaths = {"from", "to"})
+    List<Settlement> findByGroupIdOrderByPaidAtDescIdDesc(Long groupId);
+}

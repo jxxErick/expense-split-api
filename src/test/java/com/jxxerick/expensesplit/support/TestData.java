@@ -3,6 +3,7 @@ package com.jxxerick.expensesplit.support;
 import com.jxxerick.expensesplit.model.Expense;
 import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.model.Member;
+import com.jxxerick.expensesplit.model.Settlement;
 import com.jxxerick.expensesplit.model.SplitType;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -38,5 +39,10 @@ public final class TestData {
             expense.addShare(member(group, (Long) owed[i]), new BigDecimal((String) owed[i + 1]));
         }
         return expense;
+    }
+
+    public static Settlement settlement(Group group, Long fromId, Long toId, String amount) {
+        return new Settlement(group, member(group, fromId), member(group, toId), new BigDecimal(amount),
+                LocalDate.of(2026, 11, 17));
     }
 }
