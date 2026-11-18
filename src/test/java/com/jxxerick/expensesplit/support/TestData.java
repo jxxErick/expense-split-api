@@ -1,8 +1,13 @@
 package com.jxxerick.expensesplit.support;
 
+import com.jxxerick.expensesplit.model.Expense;
 import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.model.Member;
+import com.jxxerick.expensesplit.model.SplitType;
 import org.springframework.test.util.ReflectionTestUtils;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
 
 /** Builds entities with ids, as if they were already persisted. */
 public final class TestData {
@@ -23,5 +28,15 @@ public final class TestData {
 
     public static Member member(Group group, Long id) {
         return group.findMember(id).orElseThrow();
+    }
+
+    /** Expense paid by {@code payerId}; {@code owed} alternates member id and amount: 1L, "10.00", 2L, "5.00". */
+    public static Expense expense(Group group, Long payerId, String amount, Object... owed) {
+        Expense expense = new Expense(group, "Despesa", new BigDecimal(amount), member(group, payerId),
+                SplitType.EXACT, LocalDate.of(2026, 11, 17));
+        for (int i = 0; i < owed.length; i += 2) {
+            expense.addShare(member(group, (Long) owed[i]), new BigDecimal((String) owed[i + 1]));
+        }
+        return expense;
     }
 }
