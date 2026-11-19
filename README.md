@@ -59,6 +59,22 @@ Um acerto (`Settlement`) registra um pagamento entre dois membros. Ele só é ac
 realmente deve, quem recebe realmente tem a receber, e o valor não passa de nenhuma das duas
 dívidas, então ninguém troca de lado por engano.
 
+### Relatório de gastos
+
+`GET /api/groups/{id}/reports/spending?from=2026-11-01&to=2026-11-30` resume o período (datas
+opcionais e inclusivas): total gasto, quantidade e média das despesas, total por mês e, para cada
+membro, quanto pagou, quanto consumiu (soma das suas partes) e a porcentagem do total.
+
+```json
+{
+  "total": 390.00, "expenseCount": 2, "averageExpense": 195.00,
+  "months": [ { "month": "2026-11", "total": 390.00, "expenseCount": 2 } ],
+  "members": [
+    { "memberId": 1, "memberName": "Ana", "paid": 300.00, "consumed": 100.00, "percentage": 25.64 }
+  ]
+}
+```
+
 ## Endpoints
 
 | Método | Rota | Descrição |
@@ -72,6 +88,7 @@ dívidas, então ninguém troca de lado por engano.
 | `DELETE` | `/api/groups/{id}/expenses/{expenseId}` | Remove despesa |
 | `GET` | `/api/groups/{id}/balances` | Saldo de cada membro |
 | `GET` | `/api/groups/{id}/debts` | Transferências sugeridas (simplificadas) |
+| `GET` | `/api/groups/{id}/reports/spending` | Relatório de gastos por período |
 | `POST` | `/api/groups/{id}/settlements` | Registra um acerto |
 | `GET` | `/api/groups/{id}/settlements` | Lista acertos |
 
