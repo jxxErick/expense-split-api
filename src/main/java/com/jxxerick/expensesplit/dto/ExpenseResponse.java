@@ -1,6 +1,7 @@
 package com.jxxerick.expensesplit.dto;
 
 import com.jxxerick.expensesplit.model.Expense;
+import com.jxxerick.expensesplit.model.ExpenseCategory;
 import com.jxxerick.expensesplit.model.SplitType;
 
 import java.math.BigDecimal;
@@ -13,6 +14,7 @@ public record ExpenseResponse(
         BigDecimal amount,
         MemberResponse payer,
         SplitType splitType,
+        ExpenseCategory category,
         LocalDate spentAt,
         List<ShareResponse> shares
 ) {
@@ -24,6 +26,7 @@ public record ExpenseResponse(
                 expense.getAmount(),
                 MemberResponse.from(expense.getPayer()),
                 expense.getSplitType(),
+                expense.getCategory(),
                 expense.getSpentAt(),
                 expense.getShares().stream().map(ShareResponse::from).toList());
     }

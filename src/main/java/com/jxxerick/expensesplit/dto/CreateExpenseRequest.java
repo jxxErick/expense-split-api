@@ -1,5 +1,6 @@
 package com.jxxerick.expensesplit.dto;
 
+import com.jxxerick.expensesplit.model.ExpenseCategory;
 import com.jxxerick.expensesplit.model.SplitType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
@@ -30,10 +31,17 @@ public record CreateExpenseRequest(
         @NotNull(message = "informe o tipo de divisão")
         SplitType splitType,
 
+        ExpenseCategory category,
+
         @PastOrPresent(message = "não pode estar no futuro")
         LocalDate spentAt,
 
         @NotEmpty(message = "informe os participantes")
         List<@Valid ShareRequest> shares
 ) {
+
+    /** Missing category falls back to OTHER. */
+    public ExpenseCategory categoryOrDefault() {
+        return category != null ? category : ExpenseCategory.OTHER;
+    }
 }

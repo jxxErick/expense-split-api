@@ -47,6 +47,10 @@ public class Expense {
     @Column(nullable = false, length = 20)
     private SplitType splitType;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private ExpenseCategory category;
+
     @Column(nullable = false)
     private LocalDate spentAt;
 
@@ -61,12 +65,13 @@ public class Expense {
     }
 
     public Expense(Group group, String description, BigDecimal amount, Member payer,
-                   SplitType splitType, LocalDate spentAt) {
+                   SplitType splitType, ExpenseCategory category, LocalDate spentAt) {
         this.group = group;
         this.description = description;
         this.amount = amount;
         this.payer = payer;
         this.splitType = splitType;
+        this.category = category;
         this.spentAt = spentAt;
         this.createdAt = Instant.now();
     }
@@ -76,11 +81,13 @@ public class Expense {
     }
 
     /** Replaces the details; shares must be re-added afterwards. */
-    public void update(String description, BigDecimal amount, Member payer, SplitType splitType, LocalDate spentAt) {
+    public void update(String description, BigDecimal amount, Member payer, SplitType splitType,
+                       ExpenseCategory category, LocalDate spentAt) {
         this.description = description;
         this.amount = amount;
         this.payer = payer;
         this.splitType = splitType;
+        this.category = category;
         this.spentAt = spentAt;
         shares.clear();
     }
@@ -107,6 +114,10 @@ public class Expense {
 
     public SplitType getSplitType() {
         return splitType;
+    }
+
+    public ExpenseCategory getCategory() {
+        return category;
     }
 
     public LocalDate getSpentAt() {

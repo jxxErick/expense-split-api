@@ -4,6 +4,7 @@ import com.jxxerick.expensesplit.dto.CreateExpenseRequest;
 import com.jxxerick.expensesplit.dto.ExpenseResponse;
 import com.jxxerick.expensesplit.exception.ResourceNotFoundException;
 import com.jxxerick.expensesplit.model.Expense;
+import com.jxxerick.expensesplit.model.ExpenseCategory;
 import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.model.Member;
 import com.jxxerick.expensesplit.repository.ExpenseRepository;
@@ -41,7 +42,7 @@ public class ExpenseService {
 
         LocalDate spentAt = request.spentAt() != null ? request.spentAt() : LocalDate.now(clock);
         Expense expense = new Expense(group, request.description().trim(), request.amount(), payer,
-                request.splitType(), spentAt);
+                request.splitType(), request.categoryOrDefault(), spentAt);
         addShares(group, expense, shares);
 
         return ExpenseResponse.from(expenseRepository.save(expense));
@@ -56,18 +57,21 @@ public class ExpenseService {
         List<Share> shares = calculateShares(group, request);
 
         LocalDate spentAt = request.spentAt() != null ? request.spentAt() : expense.getSpentAt();
-        expense.update(request.description().trim(), request.amount(), payer, request.splitType(), spentAt);
+        expense.update(request.description().trim(), request.amount(), payer, request.splitType(),
+                request.categoryOrDefault(), spentAt);
         addShares(group, expense, shares);
 
         return ExpenseResponse.from(expenseRepository.save(expense));
     }
 
+    /** A null category lists every expense. */
     @Transactional(readOnly = true)
-    public List<ExpenseResponse> findAll(Long groupId) {
+    public List<ExpenseResponse> findAll(Long groupId, ExpenseCategory category) {
         groupService.getGroup(groupId);
-        return expenseRepository.findByGroupIdOrderBySpentAtDescIdDesc(groupId).stream()
-                .map(ExpenseResponse::from)
-                .toList();
+        List<Expense> expenses = category == null
+                ? expenseRepository.findByGroupIdOrderBySpentAtDescIdDesc(groupId)
+                : expenseRepository.findByGroupIdAndCategoryOrderBySpentAtDescIdDesc(groupId, category);
+        return expenses.stream().map(ExpenseResponse::from).toList();
     }
 
     @Transactional

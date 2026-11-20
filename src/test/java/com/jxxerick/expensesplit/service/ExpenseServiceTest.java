@@ -7,6 +7,7 @@ import com.jxxerick.expensesplit.dto.ShareResponse;
 import com.jxxerick.expensesplit.exception.BusinessException;
 import com.jxxerick.expensesplit.exception.ResourceNotFoundException;
 import com.jxxerick.expensesplit.model.Expense;
+import com.jxxerick.expensesplit.model.ExpenseCategory;
 import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.model.SplitType;
 import com.jxxerick.expensesplit.repository.ExpenseRepository;
@@ -68,6 +69,7 @@ class ExpenseServiceTest {
                 share(1L, null), share(2L, null), share(3L, null)));
 
         assertThat(response.payer().name()).isEqualTo("Ana");
+        assertThat(response.category()).isEqualTo(ExpenseCategory.OTHER);
         assertThat(response.spentAt()).isEqualTo(LocalDate.of(2026, 11, 17));
         assertThat(response.shares()).extracting(ShareResponse::amount)
                 .containsExactly(new BigDecimal("33.34"), new BigDecimal("33.33"), new BigDecimal("33.33"));
@@ -97,6 +99,17 @@ class ExpenseServiceTest {
     }
 
     @Test
+    void listsOnlyTheRequestedCategory() {
+        Expense food = TestData.expense(group, 1L, "40.00", 1L, "40.00");
+        when(groupService.getGroup(1L)).thenReturn(group);
+        when(expenseRepository.findByGroupIdAndCategoryOrderBySpentAtDescIdDesc(1L, ExpenseCategory.FOOD))
+                .thenReturn(List.of(food));
+
+        assertThat(expenseService.findAll(1L, ExpenseCategory.FOOD)).hasSize(1);
+        verify(expenseRepository, never()).findByGroupIdOrderBySpentAtDescIdDesc(any());
+    }
+
+    @Test
     void deleteFailsWhenExpenseBelongsToAnotherGroup() {
         when(expenseRepository.findByIdAndGroupId(9L, 1L)).thenReturn(Optional.empty());
 
@@ -113,10 +126,12 @@ class ExpenseServiceTest {
         when(expenseRepository.save(any(Expense.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ExpenseResponse response = expenseService.update(1L, 5L, new CreateExpenseRequest(" Mercado ",
-                new BigDecimal("90.00"), 2L, SplitType.SHARES, null, List.of(share(1L, "2"), share(3L, "1"))));
+                new BigDecimal("90.00"), 2L, SplitType.SHARES, ExpenseCategory.GROCERIES, null,
+                List.of(share(1L, "2"), share(3L, "1"))));
 
         assertThat(response.description()).isEqualTo("Mercado");
         assertThat(response.payer().name()).isEqualTo("Bruno");
+        assertThat(response.category()).isEqualTo(ExpenseCategory.GROCERIES);
         assertThat(response.spentAt()).isEqualTo(LocalDate.of(2026, 11, 17));
         assertThat(response.shares()).extracting(ShareResponse::memberName).containsExactly("Ana", "Carla");
         assertThat(response.shares()).extracting(ShareResponse::amount)
@@ -148,7 +163,7 @@ class ExpenseServiceTest {
     }
 
     private static CreateExpenseRequest request(SplitType type, String amount, ShareRequest... shares) {
-        return new CreateExpenseRequest("Jantar", new BigDecimal(amount), 1L, type, null, List.of(shares));
+        return new CreateExpenseRequest("Jantar", new BigDecimal(amount), 1L, type, null, null, List.of(shares));
     }
 
     private static ShareRequest share(Long memberId, String value) {

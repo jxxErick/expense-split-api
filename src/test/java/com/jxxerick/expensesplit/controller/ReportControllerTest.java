@@ -1,9 +1,11 @@
 package com.jxxerick.expensesplit.controller;
 
 import com.jxxerick.expensesplit.dto.SpendingReportResponse;
+import com.jxxerick.expensesplit.dto.SpendingReportResponse.CategoryTotal;
 import com.jxxerick.expensesplit.dto.SpendingReportResponse.MemberSpending;
 import com.jxxerick.expensesplit.dto.SpendingReportResponse.MonthlyTotal;
 import com.jxxerick.expensesplit.exception.BusinessException;
+import com.jxxerick.expensesplit.model.ExpenseCategory;
 import com.jxxerick.expensesplit.service.ReportService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +36,8 @@ class ReportControllerTest {
         when(reportService.spending(1L, LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 30)))
                 .thenReturn(new SpendingReportResponse(new BigDecimal("80.00"), 2, new BigDecimal("40.00"),
                         List.of(new MonthlyTotal("2026-11", new BigDecimal("80.00"), 2)),
+                        List.of(new CategoryTotal(ExpenseCategory.FOOD, new BigDecimal("80.00"), 2,
+                                new BigDecimal("100.00"))),
                         List.of(new MemberSpending(1L, "Ana", new BigDecimal("80.00"), new BigDecimal("40.00"),
                                 new BigDecimal("50.00")))));
 
@@ -41,6 +45,7 @@ class ReportControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(80.00))
                 .andExpect(jsonPath("$.months[0].month").value("2026-11"))
+                .andExpect(jsonPath("$.categories[0].category").value("FOOD"))
                 .andExpect(jsonPath("$.members[0].percentage").value(50.00));
     }
 

@@ -1,6 +1,7 @@
 package com.jxxerick.expensesplit.repository;
 
 import com.jxxerick.expensesplit.model.Expense;
+import com.jxxerick.expensesplit.model.ExpenseCategory;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -11,6 +12,9 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
 
     @EntityGraph(attributePaths = {"payer", "shares", "shares.member"})
     List<Expense> findByGroupIdOrderBySpentAtDescIdDesc(Long groupId);
+
+    @EntityGraph(attributePaths = {"payer", "shares", "shares.member"})
+    List<Expense> findByGroupIdAndCategoryOrderBySpentAtDescIdDesc(Long groupId, ExpenseCategory category);
 
     Optional<Expense> findByIdAndGroupId(Long id, Long groupId);
 }

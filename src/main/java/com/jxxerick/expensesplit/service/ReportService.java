@@ -1,10 +1,12 @@
 package com.jxxerick.expensesplit.service;
 
 import com.jxxerick.expensesplit.dto.SpendingReportResponse;
+import com.jxxerick.expensesplit.dto.SpendingReportResponse.CategoryTotal;
 import com.jxxerick.expensesplit.dto.SpendingReportResponse.MemberSpending;
 import com.jxxerick.expensesplit.dto.SpendingReportResponse.MonthlyTotal;
 import com.jxxerick.expensesplit.exception.BusinessException;
 import com.jxxerick.expensesplit.model.Expense;
+import com.jxxerick.expensesplit.model.ExpenseCategory;
 import com.jxxerick.expensesplit.model.ExpenseShare;
 import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.model.Member;
@@ -16,6 +18,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +53,7 @@ public class ReportService {
 
         Totals overall = new Totals();
         Map<YearMonth, Totals> months = new TreeMap<>();
+        Map<ExpenseCategory, Totals> categories = new EnumMap<>(ExpenseCategory.class);
         Map<Long, Totals> paid = new LinkedHashMap<>();
         Map<Long, Totals> consumed = new LinkedHashMap<>();
         for (Member member : group.getMembers()) {
@@ -59,6 +64,7 @@ public class ReportService {
         for (Expense expense : expenses) {
             overall.add(expense.getAmount());
             months.computeIfAbsent(YearMonth.from(expense.getSpentAt()), k -> new Totals()).add(expense.getAmount());
+            categories.computeIfAbsent(expense.getCategory(), k -> new Totals()).add(expense.getAmount());
             paid.get(expense.getPayer().getId()).add(expense.getAmount());
             for (ExpenseShare share : expense.getShares()) {
                 consumed.get(share.getMember().getId()).add(share.getAmount());
@@ -68,12 +74,17 @@ public class ReportService {
         List<MonthlyTotal> monthly = months.entrySet().stream()
                 .map(e -> new MonthlyTotal(e.getKey().toString(), e.getValue().sum, e.getValue().count))
                 .toList();
+        List<CategoryTotal> byCategory = categories.entrySet().stream()
+                .map(e -> new CategoryTotal(e.getKey(), e.getValue().sum, e.getValue().count,
+                        percentage(e.getValue().sum, overall.sum)))
+                .sorted(Comparator.comparing(CategoryTotal::total).reversed())
+                .toList();
         List<MemberSpending> members = group.getMembers().stream()
                 .map(m -> new MemberSpending(m.getId(), m.getName(), paid.get(m.getId()).sum,
                         consumed.get(m.getId()).sum, percentage(consumed.get(m.getId()).sum, overall.sum)))
                 .toList();
 
-        return new SpendingReportResponse(overall.sum, overall.count, overall.average(), monthly, members);
+        return new SpendingReportResponse(overall.sum, overall.count, overall.average(), monthly, byCategory, members);
     }
 
     private static BigDecimal percentage(BigDecimal part, BigDecimal total) {

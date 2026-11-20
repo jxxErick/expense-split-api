@@ -1,10 +1,12 @@
 package com.jxxerick.expensesplit.service;
 
 import com.jxxerick.expensesplit.dto.SpendingReportResponse;
+import com.jxxerick.expensesplit.dto.SpendingReportResponse.CategoryTotal;
 import com.jxxerick.expensesplit.dto.SpendingReportResponse.MemberSpending;
 import com.jxxerick.expensesplit.dto.SpendingReportResponse.MonthlyTotal;
 import com.jxxerick.expensesplit.exception.BusinessException;
 import com.jxxerick.expensesplit.model.Expense;
+import com.jxxerick.expensesplit.model.ExpenseCategory;
 import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.repository.ExpenseRepository;
 import com.jxxerick.expensesplit.support.TestData;
@@ -63,6 +65,20 @@ class ReportServiceTest {
     }
 
     @Test
+    void groupsTotalsByCategoryHighestFirst() {
+        givenExpenses(
+                inCategory(TestData.expense(group, 1L, "30.00", 1L, "30.00"), ExpenseCategory.FOOD),
+                inCategory(TestData.expense(group, 2L, "120.00", 2L, "120.00"), ExpenseCategory.LODGING),
+                inCategory(TestData.expense(group, 1L, "50.00", 2L, "50.00"), ExpenseCategory.FOOD));
+
+        SpendingReportResponse report = reportService.spending(1L, null, null);
+
+        assertThat(report.categories()).containsExactly(
+                new CategoryTotal(ExpenseCategory.LODGING, money("120.00"), 1, money("60.00")),
+                new CategoryTotal(ExpenseCategory.FOOD, money("80.00"), 2, money("40.00")));
+    }
+
+    @Test
     void keepsOnlyExpensesInsideThePeriod() {
         givenExpenses(
                 spentOn(TestData.expense(group, 1L, "100.00", 1L, "100.00"), 2026, 10, 31),
@@ -84,6 +100,7 @@ class ReportServiceTest {
         assertThat(report.total()).isEqualByComparingTo("0.00");
         assertThat(report.averageExpense()).isEqualByComparingTo("0.00");
         assertThat(report.months()).isEmpty();
+        assertThat(report.categories()).isEmpty();
         assertThat(report.members()).extracting(MemberSpending::percentage).containsOnly(money("0.00"));
     }
 
@@ -101,6 +118,11 @@ class ReportServiceTest {
 
     private static Expense spentOn(Expense expense, int year, int month, int day) {
         ReflectionTestUtils.setField(expense, "spentAt", LocalDate.of(year, month, day));
+        return expense;
+    }
+
+    private static Expense inCategory(Expense expense, ExpenseCategory category) {
+        ReflectionTestUtils.setField(expense, "category", category);
         return expense;
     }
 

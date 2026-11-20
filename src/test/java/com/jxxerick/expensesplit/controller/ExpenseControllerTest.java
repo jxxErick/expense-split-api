@@ -4,6 +4,7 @@ import com.jxxerick.expensesplit.dto.ExpenseResponse;
 import com.jxxerick.expensesplit.dto.MemberResponse;
 import com.jxxerick.expensesplit.dto.ShareResponse;
 import com.jxxerick.expensesplit.exception.BusinessException;
+import com.jxxerick.expensesplit.model.ExpenseCategory;
 import com.jxxerick.expensesplit.model.SplitType;
 import com.jxxerick.expensesplit.service.ExpenseService;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -39,7 +41,8 @@ class ExpenseControllerTest {
     @Test
     void createsExpense() throws Exception {
         ExpenseResponse response = new ExpenseResponse(3L, "Mercado", new BigDecimal("60.00"),
-                new MemberResponse(1L, "Ana"), SplitType.EQUAL, LocalDate.of(2026, 11, 17),
+                new MemberResponse(1L, "Ana"), SplitType.EQUAL, ExpenseCategory.GROCERIES,
+                LocalDate.of(2026, 11, 17),
                 List.of(new ShareResponse(1L, "Ana", new BigDecimal("30.00")),
                         new ShareResponse(2L, "Bruno", new BigDecimal("30.00"))));
         when(expenseService.create(eq(1L), any())).thenReturn(response);
@@ -79,9 +82,27 @@ class ExpenseControllerTest {
     }
 
     @Test
+    void filtersExpensesByCategory() throws Exception {
+        when(expenseService.findAll(1L, ExpenseCategory.FOOD)).thenReturn(List.of());
+
+        mvc.perform(get("/api/groups/1/expenses").param("category", "FOOD"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        verify(expenseService).findAll(1L, ExpenseCategory.FOOD);
+    }
+
+    @Test
+    void rejectsUnknownCategory() throws Exception {
+        mvc.perform(get("/api/groups/1/expenses").param("category", "PETS"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void updatesExpense() throws Exception {
         ExpenseResponse response = new ExpenseResponse(3L, "Mercado", new BigDecimal("80.00"),
-                new MemberResponse(2L, "Bruno"), SplitType.EXACT, LocalDate.of(2026, 11, 17),
+                new MemberResponse(2L, "Bruno"), SplitType.EXACT, ExpenseCategory.GROCERIES,
+                LocalDate.of(2026, 11, 17),
                 List.of(new ShareResponse(1L, "Ana", new BigDecimal("80.00"))));
         when(expenseService.update(eq(1L), eq(3L), any())).thenReturn(response);
 
