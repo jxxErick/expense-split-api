@@ -11,6 +11,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -74,6 +75,34 @@ class ExpenseSplitFlowTest {
                                 """.formatted(bruno, ana)))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value("O valor máximo desse acerto é R$ 70.00"));
+    }
+
+    @Test
+    void updatingAnExpenseReplacesItsShares() throws Exception {
+        JsonNode group = postJson("/api/groups", """
+                {"name": "República", "members": ["Ana", "Bruno"]}
+                """);
+        long ana = group.at("/members/0/id").asLong();
+        long bruno = group.at("/members/1/id").asLong();
+        String base = "/api/groups/" + group.get("id").asLong();
+
+        JsonNode expense = postJson(base + "/expenses", """
+                {"description": "Luz", "amount": 100.00, "payerId": %d, "splitType": "EQUAL",
+                 "spentAt": "2026-11-10", "shares": [{"memberId": %d}, {"memberId": %d}]}
+                """.formatted(ana, ana, bruno));
+
+        mvc.perform(put(base + "/expenses/" + expense.get("id").asLong()).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"description": "Luz e água", "amount": 150.00, "payerId": %d, "splitType": "EXACT",
+                                 "shares": [{"memberId": %d, "value": 150.00}]}
+                                """.formatted(ana, bruno)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.spentAt").value("2026-11-10"))
+                .andExpect(jsonPath("$.shares.length()").value(1));
+
+        mvc.perform(get(base + "/balances"))
+                .andExpect(jsonPath("$[0].balance").value(150.00))
+                .andExpect(jsonPath("$[1].balance").value(-150.00));
     }
 
     private JsonNode postJson(String url, String body) throws Exception {

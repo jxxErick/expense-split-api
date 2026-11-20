@@ -23,6 +23,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -75,6 +76,23 @@ class ExpenseControllerTest {
                                 """))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.detail").value("As porcentagens somam 90%, mas devem somar 100%"));
+    }
+
+    @Test
+    void updatesExpense() throws Exception {
+        ExpenseResponse response = new ExpenseResponse(3L, "Mercado", new BigDecimal("80.00"),
+                new MemberResponse(2L, "Bruno"), SplitType.EXACT, LocalDate.of(2026, 11, 17),
+                List.of(new ShareResponse(1L, "Ana", new BigDecimal("80.00"))));
+        when(expenseService.update(eq(1L), eq(3L), any())).thenReturn(response);
+
+        mvc.perform(put("/api/groups/1/expenses/3").contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"description": "Mercado", "amount": 80.00, "payerId": 2, "splitType": "EXACT",
+                                 "shares": [{"memberId": 1, "value": 80.00}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.payer.name").value("Bruno"))
+                .andExpect(jsonPath("$.shares[0].amount").value(80.00));
     }
 
     @Test

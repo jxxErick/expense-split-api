@@ -75,6 +75,16 @@ public class Expense {
         shares.add(new ExpenseShare(this, member, shareAmount));
     }
 
+    /** Replaces the details; shares must be re-added afterwards. */
+    public void update(String description, BigDecimal amount, Member payer, SplitType splitType, LocalDate spentAt) {
+        this.description = description;
+        this.amount = amount;
+        this.payer = payer;
+        this.splitType = splitType;
+        this.spentAt = spentAt;
+        shares.clear();
+    }
+
     public Long getId() {
         return id;
     }

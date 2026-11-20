@@ -4,6 +4,7 @@ import com.jxxerick.expensesplit.dto.CreateExpenseRequest;
 import com.jxxerick.expensesplit.dto.ExpenseResponse;
 import com.jxxerick.expensesplit.dto.ShareRequest;
 import com.jxxerick.expensesplit.dto.ShareResponse;
+import com.jxxerick.expensesplit.exception.BusinessException;
 import com.jxxerick.expensesplit.exception.ResourceNotFoundException;
 import com.jxxerick.expensesplit.model.Expense;
 import com.jxxerick.expensesplit.model.Group;
@@ -102,6 +103,48 @@ class ExpenseServiceTest {
         assertThatThrownBy(() -> expenseService.delete(1L, 9L))
                 .isInstanceOf(ResourceNotFoundException.class);
         verify(expenseRepository, never()).delete(any());
+    }
+
+    @Test
+    void updateRecalculatesSharesAndKeepsDateWhenMissing() {
+        Expense existing = TestData.expense(group, 1L, "30.00", 1L, "10.00", 2L, "10.00", 3L, "10.00");
+        when(groupService.getGroup(1L)).thenReturn(group);
+        when(expenseRepository.findByIdAndGroupId(5L, 1L)).thenReturn(Optional.of(existing));
+        when(expenseRepository.save(any(Expense.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ExpenseResponse response = expenseService.update(1L, 5L, new CreateExpenseRequest(" Mercado ",
+                new BigDecimal("90.00"), 2L, SplitType.SHARES, null, List.of(share(1L, "2"), share(3L, "1"))));
+
+        assertThat(response.description()).isEqualTo("Mercado");
+        assertThat(response.payer().name()).isEqualTo("Bruno");
+        assertThat(response.spentAt()).isEqualTo(LocalDate.of(2026, 11, 17));
+        assertThat(response.shares()).extracting(ShareResponse::memberName).containsExactly("Ana", "Carla");
+        assertThat(response.shares()).extracting(ShareResponse::amount)
+                .containsExactly(new BigDecimal("60.00"), new BigDecimal("30.00"));
+    }
+
+    @Test
+    void updateKeepsExpenseUntouchedWhenSplitIsInvalid() {
+        Expense existing = TestData.expense(group, 1L, "30.00", 1L, "30.00");
+        when(groupService.getGroup(1L)).thenReturn(group);
+        when(expenseRepository.findByIdAndGroupId(5L, 1L)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> expenseService.update(1L, 5L,
+                request(SplitType.PERCENTAGE, "50.00", share(1L, "60"), share(2L, "30"))))
+                .isInstanceOf(BusinessException.class);
+        assertThat(existing.getAmount()).isEqualByComparingTo("30.00");
+        assertThat(existing.getShares()).hasSize(1);
+        verify(expenseRepository, never()).save(any());
+    }
+
+    @Test
+    void updateFailsWhenExpenseIsNotInGroup() {
+        when(groupService.getGroup(1L)).thenReturn(group);
+        when(expenseRepository.findByIdAndGroupId(9L, 1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> expenseService.update(1L, 9L, request(SplitType.EQUAL, "10.00", share(1L, null))))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("9");
     }
 
     private static CreateExpenseRequest request(SplitType type, String amount, ShareRequest... shares) {

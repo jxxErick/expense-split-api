@@ -37,16 +37,27 @@ public class ExpenseService {
     public ExpenseResponse create(Long groupId, CreateExpenseRequest request) {
         Group group = groupService.getGroup(groupId);
         Member payer = memberOf(group, request.payerId());
-
-        List<SplitEntry> entries = request.shares().stream()
-                .map(s -> new SplitEntry(memberOf(group, s.memberId()).getId(), s.value()))
-                .toList();
-        List<Share> shares = splitCalculator.calculate(request.splitType(), request.amount(), entries);
+        List<Share> shares = calculateShares(group, request);
 
         LocalDate spentAt = request.spentAt() != null ? request.spentAt() : LocalDate.now(clock);
         Expense expense = new Expense(group, request.description().trim(), request.amount(), payer,
                 request.splitType(), spentAt);
-        shares.forEach(share -> expense.addShare(memberOf(group, share.memberId()), share.amount()));
+        addShares(group, expense, shares);
+
+        return ExpenseResponse.from(expenseRepository.save(expense));
+    }
+
+    /** Replaces every field and recalculates the split; a missing date keeps the current one. */
+    @Transactional
+    public ExpenseResponse update(Long groupId, Long expenseId, CreateExpenseRequest request) {
+        Group group = groupService.getGroup(groupId);
+        Expense expense = findInGroup(groupId, expenseId);
+        Member payer = memberOf(group, request.payerId());
+        List<Share> shares = calculateShares(group, request);
+
+        LocalDate spentAt = request.spentAt() != null ? request.spentAt() : expense.getSpentAt();
+        expense.update(request.description().trim(), request.amount(), payer, request.splitType(), spentAt);
+        addShares(group, expense, shares);
 
         return ExpenseResponse.from(expenseRepository.save(expense));
     }
@@ -61,10 +72,24 @@ public class ExpenseService {
 
     @Transactional
     public void delete(Long groupId, Long expenseId) {
-        Expense expense = expenseRepository.findByIdAndGroupId(expenseId, groupId)
+        expenseRepository.delete(findInGroup(groupId, expenseId));
+    }
+
+    private Expense findInGroup(Long groupId, Long expenseId) {
+        return expenseRepository.findByIdAndGroupId(expenseId, groupId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Despesa %d não encontrada no grupo %d".formatted(expenseId, groupId)));
-        expenseRepository.delete(expense);
+    }
+
+    private List<Share> calculateShares(Group group, CreateExpenseRequest request) {
+        List<SplitEntry> entries = request.shares().stream()
+                .map(s -> new SplitEntry(memberOf(group, s.memberId()).getId(), s.value()))
+                .toList();
+        return splitCalculator.calculate(request.splitType(), request.amount(), entries);
+    }
+
+    private static void addShares(Group group, Expense expense, List<Share> shares) {
+        shares.forEach(share -> expense.addShare(memberOf(group, share.memberId()), share.amount()));
     }
 
     private static Member memberOf(Group group, Long memberId) {

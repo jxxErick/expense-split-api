@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -35,6 +36,12 @@ public class ExpenseController {
     @GetMapping
     public List<ExpenseResponse> findAll(@PathVariable Long groupId) {
         return expenseService.findAll(groupId);
+    }
+
+    @PutMapping("/{expenseId}")
+    public ExpenseResponse update(@PathVariable Long groupId, @PathVariable Long expenseId,
+                                  @Valid @RequestBody CreateExpenseRequest request) {
+        return expenseService.update(groupId, expenseId, request);
     }
 
     @DeleteMapping("/{expenseId}")
