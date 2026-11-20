@@ -59,16 +59,31 @@ Um acerto (`Settlement`) registra um pagamento entre dois membros. Ele só é ac
 realmente deve, quem recebe realmente tem a receber, e o valor não passa de nenhuma das duas
 dívidas, então ninguém troca de lado por engano.
 
+### Categorias e edição
+
+Toda despesa tem uma `category` (`FOOD`, `GROCERIES`, `TRANSPORT`, `LODGING`, `LEISURE`, `BILLS`,
+`OTHER`); se não vier no corpo, vira `OTHER`. A listagem aceita `?category=` para filtrar.
+
+`PUT /expenses/{expenseId}` recebe o mesmo corpo do `POST`, recalcula a divisão do zero e troca
+todas as partes de uma vez (as antigas somem por `orphanRemoval`). Se `spentAt` não vier, a data
+original é mantida. Como a divisão é validada antes de mexer na despesa, um `PUT` inválido não
+deixa nada pela metade.
+
 ### Relatório de gastos
 
 `GET /api/groups/{id}/reports/spending?from=2026-11-01&to=2026-11-30` resume o período (datas
-opcionais e inclusivas): total gasto, quantidade e média das despesas, total por mês e, para cada
-membro, quanto pagou, quanto consumiu (soma das suas partes) e a porcentagem do total.
+opcionais e inclusivas): total gasto, quantidade e média das despesas, total por mês, total por
+categoria (do maior para o menor) e, para cada membro, quanto pagou, quanto consumiu (soma das
+suas partes) e a porcentagem do total.
 
 ```json
 {
   "total": 390.00, "expenseCount": 2, "averageExpense": 195.00,
   "months": [ { "month": "2026-11", "total": 390.00, "expenseCount": 2 } ],
+  "categories": [
+    { "category": "LODGING", "total": 300.00, "expenseCount": 1, "percentage": 76.92 },
+    { "category": "FOOD", "total": 90.00, "expenseCount": 1, "percentage": 23.08 }
+  ],
   "members": [
     { "memberId": 1, "memberName": "Ana", "paid": 300.00, "consumed": 100.00, "percentage": 25.64 }
   ]
@@ -84,7 +99,8 @@ membro, quanto pagou, quanto consumiu (soma das suas partes) e a porcentagem do 
 | `GET` | `/api/groups/{id}` | Busca grupo |
 | `POST` | `/api/groups/{id}/members` | Adiciona membro |
 | `POST` | `/api/groups/{id}/expenses` | Registra despesa |
-| `GET` | `/api/groups/{id}/expenses` | Lista despesas |
+| `GET` | `/api/groups/{id}/expenses` | Lista despesas (filtro opcional `?category=FOOD`) |
+| `PUT` | `/api/groups/{id}/expenses/{expenseId}` | Edita despesa e recalcula a divisão |
 | `DELETE` | `/api/groups/{id}/expenses/{expenseId}` | Remove despesa |
 | `GET` | `/api/groups/{id}/balances` | Saldo de cada membro |
 | `GET` | `/api/groups/{id}/debts` | Transferências sugeridas (simplificadas) |
@@ -102,11 +118,11 @@ curl -X POST http://localhost:8080/api/groups -H "Content-Type: application/json
   -d '{"name":"Viagem","members":["Ana","Bruno","Carla"]}'
 
 curl -X POST http://localhost:8080/api/groups/1/expenses -H "Content-Type: application/json" \
-  -d '{"description":"Hotel","amount":300.00,"payerId":1,"splitType":"EQUAL",
+  -d '{"description":"Hotel","amount":300.00,"payerId":1,"splitType":"EQUAL","category":"LODGING",
        "shares":[{"memberId":1},{"memberId":2},{"memberId":3}]}'
 
 curl -X POST http://localhost:8080/api/groups/1/expenses -H "Content-Type: application/json" \
-  -d '{"description":"Jantar","amount":90.00,"payerId":2,"splitType":"SHARES",
+  -d '{"description":"Jantar","amount":90.00,"payerId":2,"splitType":"SHARES","category":"FOOD",
        "shares":[{"memberId":2,"value":2},{"memberId":3,"value":1}]}'
 
 curl http://localhost:8080/api/groups/1/debts
