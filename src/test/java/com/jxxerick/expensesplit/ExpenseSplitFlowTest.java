@@ -8,6 +8,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.LocalDate;
 
@@ -135,6 +136,36 @@ class ExpenseSplitFlowTest {
                 .andExpect(jsonPath("$[0].participants[1].memberName").value("Bruno"));
         mvc.perform(get(base + "/balances"))
                 .andExpect(jsonPath("$[1].balance").value(-40.00));
+    }
+
+    @Test
+    void budgetsTrackTheCurrentMonth() throws Exception {
+        JsonNode group = postJson("/api/groups", """
+                {"name": "Férias", "members": ["Ana", "Bruno"]}
+                """);
+        long ana = group.at("/members/0/id").asLong();
+        String base = "/api/groups/" + group.get("id").asLong();
+
+        putJson(base + "/budgets/TOTAL", "{\"monthlyLimit\": 1000.00}").andExpect(status().isOk());
+        putJson(base + "/budgets/food", "{\"monthlyLimit\": 200.00}").andExpect(status().isOk());
+        putJson(base + "/budgets/FOOD", "{\"monthlyLimit\": 1500.00}").andExpect(status().isUnprocessableEntity());
+        postJson(base + "/expenses", """
+                {"description": "Restaurante", "amount": 180.00, "payerId": %d, "splitType": "EQUAL",
+                 "category": "FOOD", "shares": [{"memberId": %d}]}
+                """.formatted(ana, ana));
+
+        mvc.perform(get(base + "/budgets/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.budgets.length()").value(2))
+                .andExpect(jsonPath("$.budgets[0].scope").value("FOOD"))
+                .andExpect(jsonPath("$.budgets[0].spent").value(180.00))
+                .andExpect(jsonPath("$.budgets[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.budgets[1].scope").value("TOTAL"))
+                .andExpect(jsonPath("$.budgets[1].remaining").value(820.00));
+    }
+
+    private ResultActions putJson(String url, String body) throws Exception {
+        return mvc.perform(put(url).contentType(MediaType.APPLICATION_JSON).content(body));
     }
 
     private JsonNode postJson(String url, String body) throws Exception {
