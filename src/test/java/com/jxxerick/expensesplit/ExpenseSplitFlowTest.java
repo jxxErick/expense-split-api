@@ -9,6 +9,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDate;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -103,6 +105,36 @@ class ExpenseSplitFlowTest {
         mvc.perform(get(base + "/balances"))
                 .andExpect(jsonPath("$[0].balance").value(150.00))
                 .andExpect(jsonPath("$[1].balance").value(-150.00));
+    }
+
+    @Test
+    void recurringExpenseGeneratesOnlyOncePerOccurrence() throws Exception {
+        JsonNode group = postJson("/api/groups", """
+                {"name": "Apê", "members": ["Ana", "Bruno"]}
+                """);
+        long ana = group.at("/members/0/id").asLong();
+        long bruno = group.at("/members/1/id").asLong();
+        String base = "/api/groups/" + group.get("id").asLong();
+
+        postJson(base + "/recurring-expenses", """
+                {"description": "Internet", "amount": 120.00, "payerId": %d, "splitType": "SHARES",
+                 "category": "BILLS", "frequency": "MONTHLY", "startOn": "%s",
+                 "shares": [{"memberId": %d, "value": 2}, {"memberId": %d, "value": 1}]}
+                """.formatted(ana, LocalDate.now(), ana, bruno));
+
+        mvc.perform(post(base + "/recurring-expenses/run"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].shares[0].amount").value(80.00));
+        mvc.perform(post(base + "/recurring-expenses/run"))
+                .andExpect(jsonPath("$.length()").value(0));
+
+        mvc.perform(get(base + "/recurring-expenses"))
+                .andExpect(jsonPath("$[0].generatedCount").value(1))
+                .andExpect(jsonPath("$[0].nextRunOn").value(LocalDate.now().plusMonths(1).toString()))
+                .andExpect(jsonPath("$[0].participants[1].memberName").value("Bruno"));
+        mvc.perform(get(base + "/balances"))
+                .andExpect(jsonPath("$[1].balance").value(-40.00));
     }
 
     private JsonNode postJson(String url, String body) throws Exception {

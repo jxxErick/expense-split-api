@@ -85,7 +85,8 @@ public class ExpenseService {
                         "Despesa %d não encontrada no grupo %d".formatted(expenseId, groupId)));
     }
 
-    private List<Share> calculateShares(Group group, CreateExpenseRequest request) {
+    /** Validates members and split rules; used before persisting anything. */
+    List<Share> calculateShares(Group group, CreateExpenseRequest request) {
         List<SplitEntry> entries = request.shares().stream()
                 .map(s -> new SplitEntry(memberOf(group, s.memberId()).getId(), s.value()))
                 .toList();
@@ -96,7 +97,7 @@ public class ExpenseService {
         shares.forEach(share -> expense.addShare(memberOf(group, share.memberId()), share.amount()));
     }
 
-    private static Member memberOf(Group group, Long memberId) {
+    static Member memberOf(Group group, Long memberId) {
         return group.findMember(memberId).orElseThrow(() -> ResourceNotFoundException.member(memberId));
     }
 }
