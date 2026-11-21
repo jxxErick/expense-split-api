@@ -4,15 +4,18 @@ import com.jxxerick.expensesplit.dto.CreateSettlementRequest;
 import com.jxxerick.expensesplit.dto.SettlementResponse;
 import com.jxxerick.expensesplit.exception.BusinessException;
 import com.jxxerick.expensesplit.exception.ResourceNotFoundException;
+import com.jxxerick.expensesplit.model.ActivityType;
 import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.model.Settlement;
 import com.jxxerick.expensesplit.repository.SettlementRepository;
+import com.jxxerick.expensesplit.service.activity.GroupActivityEvent;
 import com.jxxerick.expensesplit.support.TestData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -43,12 +46,15 @@ class SettlementServiceTest {
     @Mock
     private BalanceService balanceService;
 
+    @Mock
+    private ApplicationEventPublisher events;
+
     private SettlementService settlementService;
     private Group group;
 
     @BeforeEach
     void setUp() {
-        settlementService = new SettlementService(settlementRepository, groupService, balanceService, CLOCK);
+        settlementService = new SettlementService(settlementRepository, groupService, balanceService, CLOCK, events);
         group = TestData.group(1L, "Casa", "Ana", "Bruno", "Carla");
         when(groupService.getGroup(1L)).thenReturn(group);
     }
@@ -64,6 +70,8 @@ class SettlementServiceTest {
         assertThat(response.to().name()).isEqualTo("Ana");
         assertThat(response.amount()).isEqualByComparingTo("50.00");
         assertThat(response.paidAt()).isEqualTo(LocalDate.of(2026, 11, 17));
+        verify(events).publishEvent(new GroupActivityEvent(1L, ActivityType.SETTLEMENT_RECORDED,
+                "Carla pagou R$ 50.00 para Ana", new BigDecimal("50.00"), null));
     }
 
     @Test

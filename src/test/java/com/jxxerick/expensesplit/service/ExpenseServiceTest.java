@@ -6,11 +6,13 @@ import com.jxxerick.expensesplit.dto.ShareRequest;
 import com.jxxerick.expensesplit.dto.ShareResponse;
 import com.jxxerick.expensesplit.exception.BusinessException;
 import com.jxxerick.expensesplit.exception.ResourceNotFoundException;
+import com.jxxerick.expensesplit.model.ActivityType;
 import com.jxxerick.expensesplit.model.Expense;
 import com.jxxerick.expensesplit.model.ExpenseCategory;
 import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.model.SplitType;
 import com.jxxerick.expensesplit.repository.ExpenseRepository;
+import com.jxxerick.expensesplit.service.activity.GroupActivityEvent;
 import com.jxxerick.expensesplit.service.split.EqualSplitStrategy;
 import com.jxxerick.expensesplit.service.split.ExactSplitStrategy;
 import com.jxxerick.expensesplit.service.split.PercentageSplitStrategy;
@@ -20,8 +22,10 @@ import com.jxxerick.expensesplit.support.TestData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -35,7 +39,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -49,6 +55,9 @@ class ExpenseServiceTest {
     @Mock
     private GroupService groupService;
 
+    @Mock
+    private ApplicationEventPublisher events;
+
     private ExpenseService expenseService;
     private Group group;
 
@@ -56,7 +65,7 @@ class ExpenseServiceTest {
     void setUp() {
         SplitCalculator calculator = new SplitCalculator(List.of(
                 new EqualSplitStrategy(), new ExactSplitStrategy(), new PercentageSplitStrategy(), new SharesSplitStrategy()));
-        expenseService = new ExpenseService(expenseRepository, groupService, calculator, CLOCK);
+        expenseService = new ExpenseService(expenseRepository, groupService, calculator, CLOCK, events);
         group = TestData.group(1L, "Viagem", "Ana", "Bruno", "Carla");
     }
 
@@ -160,6 +169,36 @@ class ExpenseServiceTest {
         assertThatThrownBy(() -> expenseService.update(1L, 9L, request(SplitType.EQUAL, "10.00", share(1L, null))))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("9");
+    }
+
+    @Test
+    void publishesActivityForCreateUpdateAndDelete() {
+        Expense existing = TestData.expense(group, 1L, "30.00", 1L, "30.00");
+        when(groupService.getGroup(1L)).thenReturn(group);
+        when(expenseRepository.save(any(Expense.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(expenseRepository.findByIdAndGroupId(5L, 1L)).thenReturn(Optional.of(existing));
+
+        expenseService.create(1L, request(SplitType.EQUAL, "100.00", share(1L, null)));
+        expenseService.update(1L, 5L, request(SplitType.EQUAL, "45.00", share(1L, null)));
+        expenseService.delete(1L, 5L);
+
+        ArgumentCaptor<GroupActivityEvent> captor = ArgumentCaptor.forClass(GroupActivityEvent.class);
+        verify(events, times(3)).publishEvent(captor.capture());
+        assertThat(captor.getAllValues()).extracting(GroupActivityEvent::type).containsExactly(
+                ActivityType.EXPENSE_CREATED, ActivityType.EXPENSE_UPDATED, ActivityType.EXPENSE_DELETED);
+        assertThat(captor.getAllValues()).extracting(GroupActivityEvent::summary).containsExactly(
+                "Ana pagou R$ 100.00 em 'Jantar'",
+                "Despesa 'Jantar' editada (R$ 30.00 → R$ 45.00)",
+                "Despesa 'Jantar' de R$ 45.00 removida");
+    }
+
+    @Test
+    void invalidExpenseDoesNotReachTheFeed() {
+        when(groupService.getGroup(1L)).thenReturn(group);
+
+        assertThatThrownBy(() -> expenseService.create(1L, request(SplitType.PERCENTAGE, "10.00", share(1L, "50"))))
+                .isInstanceOf(BusinessException.class);
+        verifyNoInteractions(events);
     }
 
     private static CreateExpenseRequest request(SplitType type, String amount, ShareRequest... shares) {

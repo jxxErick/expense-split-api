@@ -9,6 +9,8 @@ import com.jxxerick.expensesplit.exception.ResourceNotFoundException;
 import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.model.Member;
 import com.jxxerick.expensesplit.repository.GroupRepository;
+import com.jxxerick.expensesplit.service.activity.GroupActivityEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,9 +22,11 @@ import java.util.Set;
 public class GroupService {
 
     private final GroupRepository groupRepository;
+    private final ApplicationEventPublisher events;
 
-    public GroupService(GroupRepository groupRepository) {
+    public GroupService(GroupRepository groupRepository, ApplicationEventPublisher events) {
         this.groupRepository = groupRepository;
+        this.events = events;
     }
 
     @Transactional
@@ -36,7 +40,9 @@ public class GroupService {
             }
             group.addMember(name);
         }
-        return GroupResponse.from(groupRepository.save(group));
+        Group saved = groupRepository.save(group);
+        events.publishEvent(GroupActivityEvent.groupCreated(saved));
+        return GroupResponse.from(saved);
     }
 
     @Transactional(readOnly = true)
@@ -57,6 +63,7 @@ public class GroupService {
         }
         Member member = group.addMember(request.name());
         groupRepository.saveAndFlush(group);
+        events.publishEvent(GroupActivityEvent.memberAdded(group, member));
         return MemberResponse.from(member);
     }
 

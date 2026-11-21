@@ -6,8 +6,10 @@ import com.jxxerick.expensesplit.dto.GroupResponse;
 import com.jxxerick.expensesplit.dto.MemberResponse;
 import com.jxxerick.expensesplit.exception.BusinessException;
 import com.jxxerick.expensesplit.exception.ResourceNotFoundException;
+import com.jxxerick.expensesplit.model.ActivityType;
 import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.repository.GroupRepository;
+import com.jxxerick.expensesplit.service.activity.GroupActivityEvent;
 import com.jxxerick.expensesplit.support.TestData;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,6 +17,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 import java.util.Optional;
@@ -32,6 +35,9 @@ class GroupServiceTest {
     @Mock
     private GroupRepository groupRepository;
 
+    @Mock
+    private ApplicationEventPublisher events;
+
     @InjectMocks
     private GroupService groupService;
 
@@ -45,6 +51,8 @@ class GroupServiceTest {
         verify(groupRepository).save(captor.capture());
         assertThat(captor.getValue().getName()).isEqualTo("Viagem");
         assertThat(response.members()).extracting(MemberResponse::name).containsExactly("Ana", "Bruno");
+        verify(events).publishEvent(new GroupActivityEvent(null, ActivityType.GROUP_CREATED,
+                "Grupo 'Viagem' criado com 2 membro(s)", null, null));
     }
 
     @Test

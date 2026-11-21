@@ -8,6 +8,8 @@ import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.model.Member;
 import com.jxxerick.expensesplit.model.Settlement;
 import com.jxxerick.expensesplit.repository.SettlementRepository;
+import com.jxxerick.expensesplit.service.activity.GroupActivityEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,13 +26,15 @@ public class SettlementService {
     private final GroupService groupService;
     private final BalanceService balanceService;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
     public SettlementService(SettlementRepository settlementRepository, GroupService groupService,
-                             BalanceService balanceService, Clock clock) {
+                             BalanceService balanceService, Clock clock, ApplicationEventPublisher events) {
         this.settlementRepository = settlementRepository;
         this.groupService = groupService;
         this.balanceService = balanceService;
         this.clock = clock;
+        this.events = events;
     }
 
     /**
@@ -63,7 +67,9 @@ public class SettlementService {
 
         LocalDate paidAt = request.paidAt() != null ? request.paidAt() : LocalDate.now(clock);
         Settlement settlement = new Settlement(group, from, to, request.amount(), paidAt);
-        return SettlementResponse.from(settlementRepository.save(settlement));
+        Settlement saved = settlementRepository.save(settlement);
+        events.publishEvent(GroupActivityEvent.settlementRecorded(saved));
+        return SettlementResponse.from(saved);
     }
 
     @Transactional(readOnly = true)

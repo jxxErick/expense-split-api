@@ -12,6 +12,7 @@ import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.LocalDate;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -162,6 +163,40 @@ class ExpenseSplitFlowTest {
                 .andExpect(jsonPath("$.budgets[0].level").value("WARNING"))
                 .andExpect(jsonPath("$.budgets[1].scope").value("TOTAL"))
                 .andExpect(jsonPath("$.budgets[1].remaining").value(820.00));
+    }
+
+    @Test
+    void activityFeedTellsTheGroupHistoryNewestFirst() throws Exception {
+        JsonNode group = postJson("/api/groups", """
+                {"name": "Churrasco", "members": ["Ana", "Bruno"]}
+                """);
+        long ana = group.at("/members/0/id").asLong();
+        long bruno = group.at("/members/1/id").asLong();
+        String base = "/api/groups/" + group.get("id").asLong();
+
+        JsonNode expense = postJson(base + "/expenses", """
+                {"description": "Carne", "amount": 200.00, "payerId": %d, "splitType": "EQUAL",
+                 "category": "FOOD", "shares": [{"memberId": %d}, {"memberId": %d}]}
+                """.formatted(ana, ana, bruno));
+        postJson(base + "/settlements", """
+                {"fromMemberId": %d, "toMemberId": %d, "amount": 100.00}
+                """.formatted(bruno, ana));
+        mvc.perform(delete(base + "/expenses/" + expense.get("id").asLong())).andExpect(status().isNoContent());
+
+        String firstPage = mvc.perform(get(base + "/activity").param("limit", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].type").value("EXPENSE_DELETED"))
+                .andExpect(jsonPath("$.items[1].summary").value("Bruno pagou R$ 100.00 para Ana"))
+                .andReturn().getResponse().getContentAsString();
+        long cursor = objectMapper.readTree(firstPage).get("nextCursor").asLong();
+
+        mvc.perform(get(base + "/activity").param("before", String.valueOf(cursor)))
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[0].summary").value("Ana pagou R$ 200.00 em 'Carne'"))
+                .andExpect(jsonPath("$.items[1].type").value("GROUP_CREATED"))
+                .andExpect(jsonPath("$.nextCursor").doesNotExist());
+        mvc.perform(get(base + "/activity").param("type", "SETTLEMENT_RECORDED"))
+                .andExpect(jsonPath("$.items.length()").value(1));
     }
 
     private ResultActions putJson(String url, String body) throws Exception {

@@ -8,12 +8,15 @@ import com.jxxerick.expensesplit.model.ExpenseCategory;
 import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.model.Member;
 import com.jxxerick.expensesplit.repository.ExpenseRepository;
+import com.jxxerick.expensesplit.service.activity.GroupActivityEvent;
 import com.jxxerick.expensesplit.service.split.Share;
 import com.jxxerick.expensesplit.service.split.SplitCalculator;
 import com.jxxerick.expensesplit.service.split.SplitEntry;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
@@ -25,13 +28,15 @@ public class ExpenseService {
     private final GroupService groupService;
     private final SplitCalculator splitCalculator;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
     public ExpenseService(ExpenseRepository expenseRepository, GroupService groupService,
-                          SplitCalculator splitCalculator, Clock clock) {
+                          SplitCalculator splitCalculator, Clock clock, ApplicationEventPublisher events) {
         this.expenseRepository = expenseRepository;
         this.groupService = groupService;
         this.splitCalculator = splitCalculator;
         this.clock = clock;
+        this.events = events;
     }
 
     @Transactional
@@ -45,7 +50,9 @@ public class ExpenseService {
                 request.splitType(), request.categoryOrDefault(), spentAt);
         addShares(group, expense, shares);
 
-        return ExpenseResponse.from(expenseRepository.save(expense));
+        Expense saved = expenseRepository.save(expense);
+        events.publishEvent(GroupActivityEvent.expenseCreated(saved));
+        return ExpenseResponse.from(saved);
     }
 
     /** Replaces every field and recalculates the split; a missing date keeps the current one. */
@@ -56,12 +63,15 @@ public class ExpenseService {
         Member payer = memberOf(group, request.payerId());
         List<Share> shares = calculateShares(group, request);
 
+        BigDecimal previousAmount = expense.getAmount();
         LocalDate spentAt = request.spentAt() != null ? request.spentAt() : expense.getSpentAt();
         expense.update(request.description().trim(), request.amount(), payer, request.splitType(),
                 request.categoryOrDefault(), spentAt);
         addShares(group, expense, shares);
 
-        return ExpenseResponse.from(expenseRepository.save(expense));
+        Expense saved = expenseRepository.save(expense);
+        events.publishEvent(GroupActivityEvent.expenseUpdated(saved, previousAmount));
+        return ExpenseResponse.from(saved);
     }
 
     /** A null category lists every expense. */
@@ -76,7 +86,9 @@ public class ExpenseService {
 
     @Transactional
     public void delete(Long groupId, Long expenseId) {
-        expenseRepository.delete(findInGroup(groupId, expenseId));
+        Expense expense = findInGroup(groupId, expenseId);
+        expenseRepository.delete(expense);
+        events.publishEvent(GroupActivityEvent.expenseDeleted(expense));
     }
 
     private Expense findInGroup(Long groupId, Long expenseId) {

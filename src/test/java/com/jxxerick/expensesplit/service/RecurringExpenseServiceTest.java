@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -59,6 +60,9 @@ class RecurringExpenseServiceTest {
     @Mock
     private GroupService groupService;
 
+    @Mock
+    private ApplicationEventPublisher events;
+
     private RecurringExpenseService service;
     private Group group;
 
@@ -66,7 +70,7 @@ class RecurringExpenseServiceTest {
     void setUp() {
         SplitCalculator calculator = new SplitCalculator(List.of(
                 new EqualSplitStrategy(), new ExactSplitStrategy(), new PercentageSplitStrategy(), new SharesSplitStrategy()));
-        ExpenseService expenseService = new ExpenseService(expenseRepository, groupService, calculator, CLOCK);
+        ExpenseService expenseService = new ExpenseService(expenseRepository, groupService, calculator, CLOCK, events);
         service = new RecurringExpenseService(recurringRepository, groupService, expenseService, CLOCK);
         group = TestData.group(1L, "Casa", "Ana", "Bruno", "Carla");
         lenient().when(groupService.getGroup(1L)).thenReturn(group);
