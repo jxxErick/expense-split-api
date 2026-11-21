@@ -14,15 +14,16 @@ número de transferências** para todo mundo ficar quite.
 ## Estrutura
 
 ```
-model/         entidades JPA (Group, Member, Expense, ExpenseShare, Settlement, SplitType)
+model/         entidades JPA (Group, Member, Expense, Settlement, RecurringExpense, Budget, Activity...)
 repository/    interfaces Spring Data
 service/       regras de negócio
   split/       estratégias de divisão + alocação de centavos
   balance/     simplificação de dívidas
+  activity/    eventos do feed de atividades
 controller/    endpoints REST
 dto/           records de entrada e saída
 exception/     exceções e handler global (RFC 7807)
-config/        beans de infraestrutura (Clock)
+config/        beans de infraestrutura (Clock, agendamento)
 ```
 
 Os controllers só recebem e devolvem DTOs (`record`), os services concentram as regras e os
@@ -90,6 +91,67 @@ suas partes) e a porcentagem do total.
 }
 ```
 
+### Despesas recorrentes
+
+Aluguel, internet e streaming viram um **modelo** (`POST /recurring-expenses`) com frequência
+`WEEKLY` ou `MONTHLY`, data da primeira cobrança e data final opcional. A divisão é validada na
+criação (mesmas regras de uma despesa normal), então a geração nunca falha depois.
+
+- O `RecurringExpenseScheduler` roda todo dia às 6h (`app.recurring.cron`) e transforma em despesa
+  tudo o que venceu; `POST /recurring-expenses/run` faz o mesmo na hora para um grupo.
+- A data de cada ocorrência é calculada **a partir da primeira** (`start.plusMonths(n)`), e não
+  da anterior: um aluguel que começa em 31/01 vai para 28/02 e volta para 31/03, sem "escorregar".
+- Se a aplicação ficou fora do ar, a próxima execução recupera as ocorrências perdidas (no máximo
+  24 por modelo de uma vez).
+- `pause`/`resume`: ao retomar, as ocorrências do período pausado são **puladas**, não cobradas.
+- Ao passar da data final, o modelo vira `FINISHED`. Apagar o modelo não apaga as despesas geradas.
+
+```json
+{ "description": "Internet", "amount": 120.00, "payerId": 1, "splitType": "EQUAL", "category": "BILLS",
+  "frequency": "MONTHLY", "startOn": "2026-12-05", "shares": [{"memberId": 1}, {"memberId": 2}] }
+```
+
+### Orçamentos
+
+Cada grupo pode ter um limite mensal total e um por categoria: `PUT /budgets/TOTAL` ou
+`PUT /budgets/FOOD` com `{"monthlyLimit": 800.00}` (cria ou atualiza). Um limite de categoria não
+pode passar do total, e o total não pode ficar abaixo de uma categoria.
+
+`GET /budgets/status?month=2026-11` (padrão: mês atual) mostra, do mais usado para o menos usado:
+
+| Campo | O que é |
+| --- | --- |
+| `spent` / `remaining` / `percentUsed` | gasto no mês, quanto sobra (pode ficar negativo) e % do limite |
+| `level` | `OK`, `WARNING` (a partir de 80%) ou `EXCEEDED` |
+| `projectedSpend` / `projectedLevel` | **previsão** de fim de mês: média diária × dias do mês |
+| `dailyAllowance` | quanto ainda dá para gastar por dia até o fim do mês (só no mês atual) |
+
+Assim o grupo descobre no dia 10 que, nesse ritmo, vai estourar o orçamento de comida, e não no dia 30.
+
+### Feed de atividades
+
+Os services publicam um `GroupActivityEvent` (`ApplicationEventPublisher`) quando algo acontece
+no grupo: grupo criado, membro novo, despesa criada/editada/removida e acerto registrado. O
+`ActivityService` escuta esses eventos e grava uma linha imutável com um resumo pronto:
+
+```json
+{
+  "items": [
+    { "id": 12, "type": "EXPENSE_UPDATED", "summary": "Despesa 'Mercado' editada (R$ 80.00 → R$ 95.50)",
+      "amount": 95.50, "referenceId": 7, "occurredAt": "2026-11-21T18:40:00Z" },
+    { "id": 11, "type": "SETTLEMENT_RECORDED", "summary": "Bruno pagou R$ 100.00 para Ana",
+      "amount": 100.00, "referenceId": 3, "occurredAt": "2026-11-21T18:35:00Z" }
+  ],
+  "nextCursor": 11
+}
+```
+
+- O listener roda **dentro da transação** de quem publicou: se a operação falhar e der rollback,
+  a atividade some junto. Os services não conhecem o feed (baixo acoplamento).
+- A paginação é por **cursor** (`?before=<nextCursor>&limit=20`), não por página: itens novos
+  chegando no topo não fazem o cliente ver repetido ou pular nada. Filtro opcional `?type=`.
+- A atividade guarda só ids e o texto, então continua no histórico mesmo depois que a despesa é apagada.
+
 ## Endpoints
 
 | Método | Rota | Descrição |
@@ -107,9 +169,20 @@ suas partes) e a porcentagem do total.
 | `GET` | `/api/groups/{id}/reports/spending` | Relatório de gastos por período |
 | `POST` | `/api/groups/{id}/settlements` | Registra um acerto |
 | `GET` | `/api/groups/{id}/settlements` | Lista acertos |
+| `POST` | `/api/groups/{id}/recurring-expenses` | Cria despesa recorrente |
+| `GET` | `/api/groups/{id}/recurring-expenses` | Lista despesas recorrentes |
+| `POST` | `/api/groups/{id}/recurring-expenses/{rid}/pause` | Pausa |
+| `POST` | `/api/groups/{id}/recurring-expenses/{rid}/resume` | Retoma (sem cobrar o período pausado) |
+| `DELETE` | `/api/groups/{id}/recurring-expenses/{rid}` | Remove o modelo (as despesas ficam) |
+| `POST` | `/api/groups/{id}/recurring-expenses/run` | Gera agora as ocorrências vencidas |
+| `GET` | `/api/groups/{id}/budgets` | Lista orçamentos |
+| `PUT` | `/api/groups/{id}/budgets/{escopo}` | Cria ou altera um orçamento (`TOTAL` ou categoria) |
+| `DELETE` | `/api/groups/{id}/budgets/{escopo}` | Remove um orçamento |
+| `GET` | `/api/groups/{id}/budgets/status?month=` | Uso dos orçamentos com previsão |
+| `GET` | `/api/groups/{id}/activity?before=&type=&limit=` | Feed de atividades (cursor) |
 
 Erros seguem a **RFC 7807** (`application/problem+json`):
-`400` validação (com `errors` por campo) · `404` grupo/membro/despesa inexistente · `422` regra de negócio.
+`400` validação (com `errors` por campo) · `404` grupo/membro/despesa/orçamento inexistente · `422` regra de negócio.
 
 ### Exemplo
 
@@ -146,5 +219,5 @@ mvn test
 ```
 
 Os testes cobrem as estratégias de divisão, o alocador de centavos (incluindo casos de borda),
-o simplificador de dívidas (com teste de propriedade em saldos aleatórios), os services com
+o simplificador de dívidas (com teste de propriedade em saldos aleatórios), as recorrências (datas sem deriva, pausa, limite de recuperação), a previsão dos orçamentos, o feed com cursor, os services com
 Mockito, os controllers com `@WebMvcTest` e um fluxo completo contra o H2.
