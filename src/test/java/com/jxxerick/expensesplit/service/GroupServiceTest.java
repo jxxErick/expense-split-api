@@ -56,6 +56,27 @@ class GroupServiceTest {
     }
 
     @Test
+    void defaultsCurrencyToBrlAndNormalizesTheCode() {
+        when(groupRepository.save(any(Group.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        GroupResponse local = groupService.create(new CreateGroupRequest("Casa", List.of("Ana", "Bruno")));
+        GroupResponse abroad = groupService.create(new CreateGroupRequest("Lisboa", List.of("Ana", "Bruno"), "eur"));
+
+        assertThat(local.currency()).isEqualTo("BRL");
+        assertThat(abroad.currency()).isEqualTo("EUR");
+    }
+
+    @Test
+    void rejectsUnknownCurrency() {
+        CreateGroupRequest request = new CreateGroupRequest("Casa", List.of("Ana", "Bruno"), "ABC");
+
+        assertThatThrownBy(() -> groupService.create(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Moeda desconhecida: ABC");
+        verify(groupRepository, never()).save(any());
+    }
+
+    @Test
     void rejectsDuplicatedMembersIgnoringCase() {
         CreateGroupRequest request = new CreateGroupRequest("Casa", List.of("Ana", "ana "));
 

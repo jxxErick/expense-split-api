@@ -203,6 +203,45 @@ class ExpenseSplitFlowTest {
         return mvc.perform(put(url).contentType(MediaType.APPLICATION_JSON).content(body));
     }
 
+    @Test
+    void convertsForeignExpensesIntoTheGroupCurrency() throws Exception {
+        JsonNode group = postJson("/api/groups", """
+                {"name": "Lisboa", "members": ["Ana", "Bruno", "Carla"], "currency": "brl"}
+                """);
+        long ana = group.at("/members/0/id").asLong();
+        long bruno = group.at("/members/1/id").asLong();
+        long carla = group.at("/members/2/id").asLong();
+        String base = "/api/groups/" + group.get("id").asLong();
+
+        // EXACT values are on the receipt, in euros: 40 + 30 + 30 = 100 EUR at 6.0137
+        JsonNode expense = postJson(base + "/expenses", """
+                {"description": "Jantar", "amount": 100.00, "payerId": %d, "splitType": "EXACT",
+                 "currency": "eur", "exchangeRate": 6.0137,
+                 "shares": [{"memberId": %d, "value": 40.00}, {"memberId": %d, "value": 30.00},
+                            {"memberId": %d, "value": 30.00}]}
+                """.formatted(ana, ana, bruno, carla));
+
+        org.assertj.core.api.Assertions.assertThat(group.get("currency").asText()).isEqualTo("BRL");
+        org.assertj.core.api.Assertions.assertThat(expense.get("amount").decimalValue())
+                .isEqualByComparingTo("601.37");
+        org.assertj.core.api.Assertions.assertThat(expense.at("/foreign/currency").asText()).isEqualTo("EUR");
+        org.assertj.core.api.Assertions.assertThat(expense.at("/foreign/amount").decimalValue())
+                .isEqualByComparingTo("100.00");
+        // 240.548 / 180.411 / 180.411: the leftover cent goes to the largest remainder
+        mvc.perform(get(base + "/balances"))
+                .andExpect(jsonPath("$[0].owed").value(240.55))
+                .andExpect(jsonPath("$[1].owed").value(180.41))
+                .andExpect(jsonPath("$[2].owed").value(180.41))
+                .andExpect(jsonPath("$[0].balance").value(360.82));
+
+        mvc.perform(post(base + "/expenses").contentType(MediaType.APPLICATION_JSON).content("""
+                        {"description": "Táxi", "amount": 20.00, "payerId": %d, "splitType": "EQUAL",
+                         "currency": "USD", "shares": [{"memberId": %d}]}
+                        """.formatted(ana, ana)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("Informe a cotação de USD para BRL"));
+    }
+
     private JsonNode postJson(String url, String body) throws Exception {
         String response = mvc.perform(post(url).contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isCreated())

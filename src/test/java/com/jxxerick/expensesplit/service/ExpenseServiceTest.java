@@ -201,6 +201,98 @@ class ExpenseServiceTest {
         verifyNoInteractions(events);
     }
 
+    @Test
+    void convertsForeignExpenseAndKeepsWhatWasPaid() {
+        when(groupService.getGroup(1L)).thenReturn(group);
+        when(expenseRepository.save(any(Expense.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ExpenseResponse response = expenseService.create(1L, foreign("usd", "5.4321", SplitType.EQUAL, "100.00",
+                share(1L, null), share(2L, null), share(3L, null)));
+
+        assertThat(response.amount()).isEqualTo(new BigDecimal("543.21"));
+        assertThat(response.shares()).extracting(ShareResponse::amount).containsExactly(
+                new BigDecimal("181.07"), new BigDecimal("181.07"), new BigDecimal("181.07"));
+        assertThat(response.foreign()).isEqualTo(new ExpenseResponse.ForeignAmountResponse(
+                "USD", new BigDecimal("100.00"), new BigDecimal("5.4321")));
+    }
+
+    @Test
+    void exactValuesOfForeignExpenseAreInTheForeignCurrency() {
+        when(groupService.getGroup(1L)).thenReturn(group);
+        when(expenseRepository.save(any(Expense.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ExpenseResponse response = expenseService.create(1L, foreign("EUR", "6", SplitType.EXACT, "50.00",
+                share(1L, "20.00"), share(2L, "30.00")));
+
+        assertThat(response.amount()).isEqualTo(new BigDecimal("300.00"));
+        assertThat(response.shares()).extracting(ShareResponse::amount)
+                .containsExactly(new BigDecimal("120.00"), new BigDecimal("180.00"));
+    }
+
+    @Test
+    void foreignExpenseNeedsAnExchangeRate() {
+        when(groupService.getGroup(1L)).thenReturn(group);
+
+        assertThatThrownBy(() -> expenseService.create(1L, foreign("USD", null, SplitType.EQUAL, "10.00",
+                share(1L, null))))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Informe a cotação de USD para BRL");
+        verify(expenseRepository, never()).save(any());
+    }
+
+    @Test
+    void exchangeRateIsRejectedForTheGroupCurrency() {
+        when(groupService.getGroup(1L)).thenReturn(group);
+
+        assertThatThrownBy(() -> expenseService.create(1L, foreign("brl", "1.5", SplitType.EQUAL, "10.00",
+                share(1L, null))))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("outra moeda");
+    }
+
+    @Test
+    void foreignExpenseStillValidatesTheSplitInItsOwnCurrency() {
+        when(groupService.getGroup(1L)).thenReturn(group);
+
+        // 20 + 20 EUR is not 50 EUR, even though the converted values would be checked later
+        assertThatThrownBy(() -> expenseService.create(1L, foreign("EUR", "6", SplitType.EXACT, "50.00",
+                share(1L, "20.00"), share(2L, "20.00"))))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void updatingToTheGroupCurrencyClearsTheForeignAmount() {
+        Expense existing = TestData.expense(group, 1L, "543.21", 1L, "543.21");
+        existing.paidInForeignCurrency("USD", new BigDecimal("100.00"), new BigDecimal("5.4321"));
+        when(groupService.getGroup(1L)).thenReturn(group);
+        when(expenseRepository.findByIdAndGroupId(5L, 1L)).thenReturn(Optional.of(existing));
+        when(expenseRepository.save(any(Expense.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ExpenseResponse response = expenseService.update(1L, 5L, request(SplitType.EQUAL, "500.00", share(1L, null)));
+
+        assertThat(response.foreign()).isNull();
+        assertThat(existing.isForeign()).isFalse();
+        assertThat(response.amount()).isEqualTo(new BigDecimal("500.00"));
+    }
+
+    @Test
+    void foreignExpenseActivityShowsBothValues() {
+        when(groupService.getGroup(1L)).thenReturn(group);
+        when(expenseRepository.save(any(Expense.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        expenseService.create(1L, foreign("USD", "5.4321", SplitType.EQUAL, "100.00", share(1L, null)));
+
+        ArgumentCaptor<GroupActivityEvent> captor = ArgumentCaptor.forClass(GroupActivityEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().summary()).isEqualTo("Ana pagou US$ 100.00 (R$ 543.21) em 'Jantar'");
+    }
+
+    private static CreateExpenseRequest foreign(String currency, String rate, SplitType type, String amount,
+                                                ShareRequest... shares) {
+        return new CreateExpenseRequest("Jantar", new BigDecimal(amount), 1L, type, null, null, List.of(shares),
+                currency, rate == null ? null : new BigDecimal(rate));
+    }
+
     private static CreateExpenseRequest request(SplitType type, String amount, ShareRequest... shares) {
         return new CreateExpenseRequest("Jantar", new BigDecimal(amount), 1L, type, null, null, List.of(shares));
     }

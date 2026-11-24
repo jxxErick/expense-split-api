@@ -35,7 +35,7 @@ class GroupControllerTest {
 
     @Test
     void createsGroup() throws Exception {
-        GroupResponse response = new GroupResponse(7L, "Viagem",
+        GroupResponse response = new GroupResponse(7L, "Viagem", "BRL",
                 List.of(new MemberResponse(1L, "Ana"), new MemberResponse(2L, "Bruno")), Instant.now());
         when(groupService.create(any())).thenReturn(response);
 
