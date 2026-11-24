@@ -152,6 +152,28 @@ no grupo: grupo criado, membro novo, despesa criada/editada/removida e acerto re
   chegando no topo não fazem o cliente ver repetido ou pular nada. Filtro opcional `?type=`.
 - A atividade guarda só ids e o texto, então continua no histórico mesmo depois que a despesa é apagada.
 
+### Despesas em outra moeda
+
+Cada grupo tem uma moeda (`"currency": "EUR"` na criação, padrão `BRL`) e todos os saldos,
+relatórios e orçamentos ficam nela. Uma despesa paga em outra moeda informa a moeda e a cotação
+(quanto vale 1 unidade dela na moeda do grupo):
+
+```json
+{ "description": "Jantar em Nova York", "amount": 100.00, "currency": "USD", "exchangeRate": 5.4321,
+  "payerId": 1, "splitType": "EQUAL", "shares": [{"memberId": 1}, {"memberId": 2}, {"memberId": 3}] }
+```
+
+- O valor convertido usa **arredondamento bancário** (`HALF_EVEN`), e a resposta guarda o que foi
+  pago de verdade em `foreign: { currency, amount, exchangeRate }`.
+- A divisão é validada **na moeda do recibo**: num `EXACT`, os valores somam 100 USD, não 543,21.
+- Depois disso, `EQUAL`, `PERCENTAGE` e `SHARES` são divididos de novo sobre o total convertido
+  (cada um fica com R$ 181,07). No `EXACT`, as partes convertidas mantêm a proporção pelo método
+  dos maiores restos, então a soma bate com o total no centavo.
+- Sem cotação para moeda estrangeira, ou com cotação numa despesa na moeda do grupo → `422`.
+  Códigos são validados pelo ISO 4217 (`usd` vira `USD`, `XYZ` é recusado).
+- O feed mostra os dois valores: `Ana pagou US$ 100.00 (R$ 543.21) em 'Jantar'`.
+- Editar a despesa para a moeda do grupo limpa os dados da moeda estrangeira.
+
 ### Extrato do membro
 
 `GET /api/groups/{id}/members/{memberId}/statement?from=2026-11-01&to=2026-11-30` mostra a vida
@@ -185,11 +207,11 @@ linha.
 
 | Método | Rota | Descrição |
 | --- | --- | --- |
-| `POST` | `/api/groups` | Cria grupo com membros |
+| `POST` | `/api/groups` | Cria grupo com membros (moeda opcional, padrão `BRL`) |
 | `GET` | `/api/groups` | Lista grupos |
 | `GET` | `/api/groups/{id}` | Busca grupo |
 | `POST` | `/api/groups/{id}/members` | Adiciona membro |
-| `POST` | `/api/groups/{id}/expenses` | Registra despesa |
+| `POST` | `/api/groups/{id}/expenses` | Registra despesa (aceita `currency` + `exchangeRate`) |
 | `GET` | `/api/groups/{id}/expenses` | Lista despesas (filtro opcional `?category=FOOD`) |
 | `PUT` | `/api/groups/{id}/expenses/{expenseId}` | Edita despesa e recalcula a divisão |
 | `DELETE` | `/api/groups/{id}/expenses/{expenseId}` | Remove despesa |

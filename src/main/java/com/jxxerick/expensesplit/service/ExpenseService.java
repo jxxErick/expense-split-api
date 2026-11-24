@@ -2,13 +2,16 @@ package com.jxxerick.expensesplit.service;
 
 import com.jxxerick.expensesplit.dto.CreateExpenseRequest;
 import com.jxxerick.expensesplit.dto.ExpenseResponse;
+import com.jxxerick.expensesplit.exception.BusinessException;
 import com.jxxerick.expensesplit.exception.ResourceNotFoundException;
 import com.jxxerick.expensesplit.model.Expense;
 import com.jxxerick.expensesplit.model.ExpenseCategory;
 import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.model.Member;
+import com.jxxerick.expensesplit.model.SplitType;
 import com.jxxerick.expensesplit.repository.ExpenseRepository;
 import com.jxxerick.expensesplit.service.activity.GroupActivityEvent;
+import com.jxxerick.expensesplit.service.currency.CurrencyConverter;
 import com.jxxerick.expensesplit.service.split.Share;
 import com.jxxerick.expensesplit.service.split.SplitCalculator;
 import com.jxxerick.expensesplit.service.split.SplitEntry;
@@ -43,12 +46,13 @@ public class ExpenseService {
     public ExpenseResponse create(Long groupId, CreateExpenseRequest request) {
         Group group = groupService.getGroup(groupId);
         Member payer = memberOf(group, request.payerId());
-        List<Share> shares = calculateShares(group, request);
+        Conversion conversion = convert(group, request);
 
         LocalDate spentAt = request.spentAt() != null ? request.spentAt() : LocalDate.now(clock);
-        Expense expense = new Expense(group, request.description().trim(), request.amount(), payer,
+        Expense expense = new Expense(group, request.description().trim(), conversion.amount(), payer,
                 request.splitType(), request.categoryOrDefault(), spentAt);
-        addShares(group, expense, shares);
+        conversion.applyTo(expense, request);
+        addShares(group, expense, conversion.shares());
 
         Expense saved = expenseRepository.save(expense);
         events.publishEvent(GroupActivityEvent.expenseCreated(saved));
@@ -61,13 +65,14 @@ public class ExpenseService {
         Group group = groupService.getGroup(groupId);
         Expense expense = findInGroup(groupId, expenseId);
         Member payer = memberOf(group, request.payerId());
-        List<Share> shares = calculateShares(group, request);
+        Conversion conversion = convert(group, request);
 
         BigDecimal previousAmount = expense.getAmount();
         LocalDate spentAt = request.spentAt() != null ? request.spentAt() : expense.getSpentAt();
-        expense.update(request.description().trim(), request.amount(), payer, request.splitType(),
+        expense.update(request.description().trim(), conversion.amount(), payer, request.splitType(),
                 request.categoryOrDefault(), spentAt);
-        addShares(group, expense, shares);
+        conversion.applyTo(expense, request);
+        addShares(group, expense, conversion.shares());
 
         Expense saved = expenseRepository.save(expense);
         events.publishEvent(GroupActivityEvent.expenseUpdated(saved, previousAmount));
@@ -99,10 +104,49 @@ public class ExpenseService {
 
     /** Validates members and split rules; used before persisting anything. */
     List<Share> calculateShares(Group group, CreateExpenseRequest request) {
+        return calculateShares(group, request, request.amount());
+    }
+
+    private List<Share> calculateShares(Group group, CreateExpenseRequest request, BigDecimal total) {
         List<SplitEntry> entries = request.shares().stream()
                 .map(s -> new SplitEntry(memberOf(group, s.memberId()).getId(), s.value()))
                 .toList();
-        return splitCalculator.calculate(request.splitType(), request.amount(), entries);
+        return splitCalculator.calculate(request.splitType(), total, entries);
+    }
+
+    /**
+     * Validates the split in the currency the expense was paid in (EXACT values match the receipt),
+     * then brings it to the group currency: EXACT shares are converted proportionally, while the
+     * other types are split again over the converted total, so an EQUAL split stays equal to the cent.
+     */
+    Conversion convert(Group group, CreateExpenseRequest request) {
+        String currency = request.currency() == null ? group.getCurrency()
+                : CurrencyConverter.normalize(request.currency());
+        List<Share> shares = calculateShares(group, request);
+        if (currency.equals(group.getCurrency())) {
+            if (request.exchangeRate() != null) {
+                throw new BusinessException("A cotação só vale para despesas em outra moeda");
+            }
+            return new Conversion(null, request.amount(), shares);
+        }
+        if (request.exchangeRate() == null) {
+            throw new BusinessException("Informe a cotação de %s para %s".formatted(currency, group.getCurrency()));
+        }
+        BigDecimal converted = CurrencyConverter.convert(request.amount(), request.exchangeRate());
+        List<Share> convertedShares = request.splitType() == SplitType.EXACT
+                ? CurrencyConverter.convertShares(shares, converted)
+                : calculateShares(group, request, converted);
+        return new Conversion(currency, converted, convertedShares);
+    }
+
+    /** Amount and shares in the group currency; {@code foreignCurrency} is null for local expenses. */
+    record Conversion(String foreignCurrency, BigDecimal amount, List<Share> shares) {
+
+        void applyTo(Expense expense, CreateExpenseRequest request) {
+            if (foreignCurrency != null) {
+                expense.paidInForeignCurrency(foreignCurrency, request.amount(), request.exchangeRate());
+            }
+        }
     }
 
     private static void addShares(Group group, Expense expense, List<Share> shares) {

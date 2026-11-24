@@ -68,6 +68,18 @@ class ExpenseControllerTest {
     }
 
     @Test
+    void validatesCurrencyAndExchangeRate() throws Exception {
+        mvc.perform(post("/api/groups/1/expenses").contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"description": "Hotel", "amount": 100.00, "payerId": 1, "splitType": "EQUAL",
+                                 "currency": "dollar", "exchangeRate": 0, "shares": [{"memberId": 1}]}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.currency").value("use o código ISO de 3 letras (ex.: USD)"))
+                .andExpect(jsonPath("$.errors.exchangeRate").value("deve ser maior que zero"));
+    }
+
+    @Test
     void returns422WhenSplitIsInconsistent() throws Exception {
         when(expenseService.create(eq(1L), any()))
                 .thenThrow(new BusinessException("As porcentagens somam 90%, mas devem somar 100%"));

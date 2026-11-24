@@ -10,6 +10,7 @@ import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.model.Member;
 import com.jxxerick.expensesplit.repository.GroupRepository;
 import com.jxxerick.expensesplit.service.activity.GroupActivityEvent;
+import com.jxxerick.expensesplit.service.currency.CurrencyConverter;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,7 +32,7 @@ public class GroupService {
 
     @Transactional
     public GroupResponse create(CreateGroupRequest request) {
-        Group group = new Group(request.name().trim());
+        Group group = new Group(request.name().trim(), CurrencyConverter.normalize(request.currencyOrDefault()));
 
         Set<String> seen = new HashSet<>();
         for (String name : request.members()) {

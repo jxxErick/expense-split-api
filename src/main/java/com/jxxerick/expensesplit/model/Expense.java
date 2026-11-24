@@ -43,6 +43,16 @@ public class Expense {
     @JoinColumn(name = "payer_id", nullable = false)
     private Member payer;
 
+    /** Set only when paid in a currency other than the group's; {@code amount} is then the converted value. */
+    @Column(length = 3)
+    private String originalCurrency;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal originalAmount;
+
+    @Column(precision = 16, scale = 6)
+    private BigDecimal exchangeRate;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private SplitType splitType;
@@ -89,7 +99,33 @@ public class Expense {
         this.splitType = splitType;
         this.category = category;
         this.spentAt = spentAt;
+        this.originalCurrency = null;
+        this.originalAmount = null;
+        this.exchangeRate = null;
         shares.clear();
+    }
+
+    /** Remembers what was actually paid abroad; {@code amount} must already hold the converted value. */
+    public void paidInForeignCurrency(String currency, BigDecimal foreignAmount, BigDecimal rate) {
+        this.originalCurrency = currency;
+        this.originalAmount = foreignAmount;
+        this.exchangeRate = rate;
+    }
+
+    public boolean isForeign() {
+        return originalCurrency != null;
+    }
+
+    public String getOriginalCurrency() {
+        return originalCurrency;
+    }
+
+    public BigDecimal getOriginalAmount() {
+        return originalAmount;
+    }
+
+    public BigDecimal getExchangeRate() {
+        return exchangeRate;
     }
 
     public Long getId() {

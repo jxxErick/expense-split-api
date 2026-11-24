@@ -7,10 +7,14 @@ import com.jxxerick.expensesplit.model.Member;
 import com.jxxerick.expensesplit.model.Settlement;
 
 import java.math.BigDecimal;
+import java.util.Currency;
+import java.util.Locale;
 
 /** Published by the services whenever something worth showing in the group feed happens. */
 public record GroupActivityEvent(Long groupId, ActivityType type, String summary, BigDecimal amount,
                                  Long referenceId) {
+
+    private static final Locale PT_BR = Locale.of("pt", "BR");
 
     public static GroupActivityEvent groupCreated(Group group) {
         return new GroupActivityEvent(group.getId(), ActivityType.GROUP_CREATED,
@@ -23,17 +27,21 @@ public record GroupActivityEvent(Long groupId, ActivityType type, String summary
                 "%s entrou no grupo".formatted(member.getName()), null, member.getId());
     }
 
+    /** A foreign expense shows both values: "Ana pagou US$ 100.00 (R$ 540.00) em 'Hotel'". */
     public static GroupActivityEvent expenseCreated(Expense expense) {
+        String paid = expense.isForeign()
+                ? "%s (%s)".formatted(money(expense.getOriginalCurrency(), expense.getOriginalAmount()), money(expense))
+                : money(expense);
         return new GroupActivityEvent(expense.getGroup().getId(), ActivityType.EXPENSE_CREATED,
-                "%s pagou R$ %s em '%s'".formatted(expense.getPayer().getName(), expense.getAmount(),
-                        expense.getDescription()),
+                "%s pagou %s em '%s'".formatted(expense.getPayer().getName(), paid, expense.getDescription()),
                 expense.getAmount(), expense.getId());
     }
 
     public static GroupActivityEvent expenseUpdated(Expense expense, BigDecimal previousAmount) {
+        String currency = expense.getGroup().getCurrency();
         String change = previousAmount.compareTo(expense.getAmount()) == 0
-                ? "R$ %s".formatted(expense.getAmount())
-                : "R$ %s → R$ %s".formatted(previousAmount, expense.getAmount());
+                ? money(expense)
+                : "%s → %s".formatted(money(currency, previousAmount), money(expense));
         return new GroupActivityEvent(expense.getGroup().getId(), ActivityType.EXPENSE_UPDATED,
                 "Despesa '%s' editada (%s)".formatted(expense.getDescription(), change),
                 expense.getAmount(), expense.getId());
@@ -41,14 +49,24 @@ public record GroupActivityEvent(Long groupId, ActivityType type, String summary
 
     public static GroupActivityEvent expenseDeleted(Expense expense) {
         return new GroupActivityEvent(expense.getGroup().getId(), ActivityType.EXPENSE_DELETED,
-                "Despesa '%s' de R$ %s removida".formatted(expense.getDescription(), expense.getAmount()),
+                "Despesa '%s' de %s removida".formatted(expense.getDescription(), money(expense)),
                 expense.getAmount(), expense.getId());
     }
 
     public static GroupActivityEvent settlementRecorded(Settlement settlement) {
         return new GroupActivityEvent(settlement.getGroup().getId(), ActivityType.SETTLEMENT_RECORDED,
-                "%s pagou R$ %s para %s".formatted(settlement.getFrom().getName(), settlement.getAmount(),
+                "%s pagou %s para %s".formatted(settlement.getFrom().getName(),
+                        money(settlement.getGroup().getCurrency(), settlement.getAmount()),
                         settlement.getTo().getName()),
                 settlement.getAmount(), settlement.getId());
+    }
+
+    private static String money(Expense expense) {
+        return money(expense.getGroup().getCurrency(), expense.getAmount());
+    }
+
+    /** Symbol as written in Brazil: R$, US$, € ... */
+    static String money(String currency, BigDecimal amount) {
+        return Currency.getInstance(currency).getSymbol(PT_BR) + " " + amount;
     }
 }

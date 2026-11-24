@@ -19,12 +19,18 @@ import java.util.Optional;
 @Table(name = "expense_groups")
 public class Group {
 
+    public static final String DEFAULT_CURRENCY = "BRL";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(nullable = false, length = 80)
     private String name;
+
+    /** ISO 4217 code every balance of the group is kept in. */
+    @Column(nullable = false, length = 3)
+    private String currency;
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
@@ -37,7 +43,12 @@ public class Group {
     }
 
     public Group(String name) {
+        this(name, DEFAULT_CURRENCY);
+    }
+
+    public Group(String name, String currency) {
         this.name = name;
+        this.currency = currency;
         this.createdAt = Instant.now();
     }
 
@@ -61,6 +72,10 @@ public class Group {
 
     public String getName() {
         return name;
+    }
+
+    public String getCurrency() {
+        return currency;
     }
 
     public Instant getCreatedAt() {
