@@ -152,6 +152,35 @@ no grupo: grupo criado, membro novo, despesa criada/editada/removida e acerto re
   chegando no topo não fazem o cliente ver repetido ou pular nada. Filtro opcional `?type=`.
 - A atividade guarda só ids e o texto, então continua no histórico mesmo depois que a despesa é apagada.
 
+### Extrato do membro
+
+`GET /api/groups/{id}/members/{memberId}/statement?from=2026-11-01&to=2026-11-30` mostra a vida
+de uma pessoa no grupo como um extrato de banco: cada despesa em que ela pagou ou participou e
+cada acerto enviado/recebido, do mais antigo para o mais novo, com o **saldo acumulado** linha a
+linha.
+
+- `effect` usa a mesma regra do saldo do grupo (`pago - parte + enviado - recebido`), então sem
+  período o `closingBalance` bate exatamente com `/balances` (há teste garantindo isso).
+- Tudo o que aconteceu antes de `from` vira o `openingBalance`; o que vem depois de `to` fica de fora.
+- No mesmo dia, a despesa vem antes do acerto (a dívida nasce antes de ser paga).
+- Uma despesa que a pessoa pagou e da qual também participou vira uma linha só.
+
+```json
+{
+  "member": { "id": 2, "name": "Bruno" },
+  "from": "2026-11-15", "to": "2026-11-30",
+  "openingBalance": -30.00,
+  "totalPaid": 20.00, "totalShare": 20.00, "totalSent": 30.00, "totalReceived": 0.00,
+  "closingBalance": 0.00,
+  "lines": [
+    { "date": "2026-11-15", "type": "EXPENSE", "referenceId": 2, "description": "Táxi",
+      "paid": 20.00, "share": 20.00, "effect": 0.00, "balance": -30.00 },
+    { "date": "2026-11-20", "type": "SETTLEMENT_SENT", "referenceId": 3, "description": "Pagamento para Ana",
+      "paid": 0.00, "share": 0.00, "effect": 30.00, "balance": 0.00 }
+  ]
+}
+```
+
 ## Endpoints
 
 | Método | Rota | Descrição |
@@ -166,6 +195,7 @@ no grupo: grupo criado, membro novo, despesa criada/editada/removida e acerto re
 | `DELETE` | `/api/groups/{id}/expenses/{expenseId}` | Remove despesa |
 | `GET` | `/api/groups/{id}/balances` | Saldo de cada membro |
 | `GET` | `/api/groups/{id}/debts` | Transferências sugeridas (simplificadas) |
+| `GET` | `/api/groups/{id}/members/{memberId}/statement?from=&to=` | Extrato do membro com saldo acumulado |
 | `GET` | `/api/groups/{id}/reports/spending` | Relatório de gastos por período |
 | `POST` | `/api/groups/{id}/settlements` | Registra um acerto |
 | `GET` | `/api/groups/{id}/settlements` | Lista acertos |
