@@ -239,18 +239,18 @@ Erros seguem a **RFC 7807** (`application/problem+json`):
 ### Exemplo
 
 ```bash
-curl -X POST http://localhost:8080/api/groups -H "Content-Type: application/json" \
+curl -X POST http://localhost:8081/api/groups -H "Content-Type: application/json" \
   -d '{"name":"Viagem","members":["Ana","Bruno","Carla"]}'
 
-curl -X POST http://localhost:8080/api/groups/1/expenses -H "Content-Type: application/json" \
+curl -X POST http://localhost:8081/api/groups/1/expenses -H "Content-Type: application/json" \
   -d '{"description":"Hotel","amount":300.00,"payerId":1,"splitType":"EQUAL","category":"LODGING",
        "shares":[{"memberId":1},{"memberId":2},{"memberId":3}]}'
 
-curl -X POST http://localhost:8080/api/groups/1/expenses -H "Content-Type: application/json" \
+curl -X POST http://localhost:8081/api/groups/1/expenses -H "Content-Type: application/json" \
   -d '{"description":"Jantar","amount":90.00,"payerId":2,"splitType":"SHARES","category":"FOOD",
        "shares":[{"memberId":2,"value":2},{"memberId":3,"value":1}]}'
 
-curl http://localhost:8080/api/groups/1/debts
+curl http://localhost:8081/api/groups/1/debts
 ```
 
 ```json

@@ -1,3 +1,7 @@
+server:
+  # 8080 is the customer-api; both run side by side for the web front-end
+  port: ${PORT:8081}
+
 spring:
   application:
     name: expense-split-api
