@@ -5,9 +5,11 @@ import com.jxxerick.expensesplit.dto.CreateGroupRequest;
 import com.jxxerick.expensesplit.dto.GroupResponse;
 import com.jxxerick.expensesplit.dto.MemberResponse;
 import com.jxxerick.expensesplit.service.GroupService;
+import com.jxxerick.expensesplit.service.MemberService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,9 +27,11 @@ import java.util.List;
 public class GroupController {
 
     private final GroupService groupService;
+    private final MemberService memberService;
 
-    public GroupController(GroupService groupService) {
+    public GroupController(GroupService groupService, MemberService memberService) {
         this.groupService = groupService;
+        this.memberService = memberService;
     }
 
     @PostMapping
@@ -52,5 +56,12 @@ public class GroupController {
     @ResponseStatus(HttpStatus.CREATED)
     public MemberResponse addMember(@PathVariable Long id, @Valid @RequestBody AddMemberRequest request) {
         return groupService.addMember(id, request);
+    }
+
+    /** The member leaves the group; old expenses keep showing them. */
+    @DeleteMapping("/{id}/members/{memberId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void leave(@PathVariable Long id, @PathVariable Long memberId) {
+        memberService.leave(id, memberId);
     }
 }

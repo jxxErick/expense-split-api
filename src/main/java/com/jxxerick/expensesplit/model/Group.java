@@ -58,8 +58,12 @@ public class Group {
         return member;
     }
 
-    public boolean hasMemberNamed(String memberName) {
-        return members.stream().anyMatch(m -> m.getName().equalsIgnoreCase(memberName.trim()));
+    public Optional<Member> findMemberNamed(String memberName) {
+        return members.stream().filter(m -> m.getName().equalsIgnoreCase(memberName.trim())).findFirst();
+    }
+
+    public long activeMemberCount() {
+        return members.stream().filter(Member::isActive).count();
     }
 
     public Optional<Member> findMember(Long memberId) {

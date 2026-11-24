@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -59,8 +60,17 @@ public class GroupService {
     @Transactional
     public MemberResponse addMember(Long groupId, AddMemberRequest request) {
         Group group = getGroup(groupId);
-        if (group.hasMemberNamed(request.name())) {
+        Optional<Member> existing = group.findMemberNamed(request.name());
+        if (existing.isPresent() && existing.get().isActive()) {
             throw new BusinessException("Já existe um membro chamado '%s'".formatted(request.name().trim()));
+        }
+        if (existing.isPresent()) {
+            // someone who left comes back with the same id, so their old expenses stay linked
+            Member member = existing.get();
+            member.rejoin();
+            groupRepository.saveAndFlush(group);
+            events.publishEvent(GroupActivityEvent.memberRejoined(group, member));
+            return MemberResponse.from(member);
         }
         Member member = group.addMember(request.name());
         groupRepository.saveAndFlush(group);

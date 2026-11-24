@@ -19,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -105,6 +106,21 @@ class GroupServiceTest {
 
         assertThatThrownBy(() -> groupService.addMember(1L, new AddMemberRequest("BRUNO")))
                 .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void memberWhoLeftRejoinsWithSameId() {
+        Group group = TestData.group(1L, "Casa", "Ana", "Bruno");
+        TestData.member(group, 2L).leave(Instant.parse("2026-11-20T10:00:00Z"));
+        when(groupRepository.findWithMembersById(1L)).thenReturn(Optional.of(group));
+
+        MemberResponse response = groupService.addMember(1L, new AddMemberRequest(" bruno "));
+
+        assertThat(response).isEqualTo(new MemberResponse(2L, "Bruno", true));
+        assertThat(group.getMembers()).hasSize(2);
+        assertThat(TestData.member(group, 2L).getLeftAt()).isNull();
+        verify(events).publishEvent(new GroupActivityEvent(1L, ActivityType.MEMBER_REJOINED,
+                "Bruno voltou ao grupo", null, 2L));
     }
 
     @Test

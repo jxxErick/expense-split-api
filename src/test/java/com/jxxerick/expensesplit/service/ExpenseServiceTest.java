@@ -108,6 +108,32 @@ class ExpenseServiceTest {
     }
 
     @Test
+    void rejectsMemberWhoLeftTheGroup() {
+        TestData.member(group, 3L).leave(CLOCK.instant());
+        when(groupService.getGroup(1L)).thenReturn(group);
+
+        assertThatThrownBy(() -> expenseService.create(1L, request(SplitType.EQUAL, "10.00", share(1L, null), share(3L, null))))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Carla saiu do grupo");
+        verify(expenseRepository, never()).save(any());
+    }
+
+    @Test
+    void oldExpenseOfMemberWhoLeftCannotBeChangedOrDeleted() {
+        Expense old = TestData.expense(group, 1L, "20.00", 1L, "10.00", 3L, "10.00");
+        TestData.member(group, 3L).leave(CLOCK.instant());
+        when(groupService.getGroup(1L)).thenReturn(group);
+        when(expenseRepository.findByIdAndGroupId(5L, 1L)).thenReturn(Optional.of(old));
+
+        assertThatThrownBy(() -> expenseService.update(1L, 5L, request(SplitType.EQUAL, "20.00", share(1L, null))))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Carla saiu do grupo; essa despesa não pode mais ser alterada");
+        assertThatThrownBy(() -> expenseService.delete(1L, 5L))
+                .isInstanceOf(BusinessException.class);
+        verify(expenseRepository, never()).delete(any());
+    }
+
+    @Test
     void listsOnlyTheRequestedCategory() {
         Expense food = TestData.expense(group, 1L, "40.00", 1L, "40.00");
         when(groupService.getGroup(1L)).thenReturn(group);

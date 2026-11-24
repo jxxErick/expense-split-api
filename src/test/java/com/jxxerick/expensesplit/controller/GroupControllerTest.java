@@ -5,6 +5,7 @@ import com.jxxerick.expensesplit.dto.MemberResponse;
 import com.jxxerick.expensesplit.exception.BusinessException;
 import com.jxxerick.expensesplit.exception.ResourceNotFoundException;
 import com.jxxerick.expensesplit.service.GroupService;
+import com.jxxerick.expensesplit.service.MemberService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -17,7 +18,10 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -32,6 +36,9 @@ class GroupControllerTest {
 
     @MockBean
     private GroupService groupService;
+
+    @MockBean
+    private MemberService memberService;
 
     @Test
     void createsGroup() throws Exception {
@@ -77,5 +84,32 @@ class GroupControllerTest {
                                 {"name": "Ana"}
                                 """))
                 .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void memberLeavesGroup() throws Exception {
+        mvc.perform(delete("/api/groups/1/members/3")).andExpect(status().isNoContent());
+
+        verify(memberService).leave(1L, 3L);
+    }
+
+    @Test
+    void leavingWithOpenBalanceIs422() throws Exception {
+        doThrow(new BusinessException("Bruno ainda deve R$ 10.00; acerte as contas antes de sair"))
+                .when(memberService).leave(1L, 2L);
+
+        mvc.perform(delete("/api/groups/1/members/2"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.detail").value("Bruno ainda deve R$ 10.00; acerte as contas antes de sair"));
+    }
+
+    @Test
+    void membersCarryTheActiveFlag() throws Exception {
+        when(groupService.findById(1L)).thenReturn(new GroupResponse(1L, "Casa", "BRL",
+                List.of(new MemberResponse(1L, "Ana"), new MemberResponse(2L, "Bruno", false)), Instant.now()));
+
+        mvc.perform(get("/api/groups/1"))
+                .andExpect(jsonPath("$.members[0].active").value(true))
+                .andExpect(jsonPath("$.members[1].active").value(false));
     }
 }
