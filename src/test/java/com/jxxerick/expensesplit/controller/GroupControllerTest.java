@@ -23,6 +23,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -111,5 +112,22 @@ class GroupControllerTest {
         mvc.perform(get("/api/groups/1"))
                 .andExpect(jsonPath("$.members[0].active").value(true))
                 .andExpect(jsonPath("$.members[1].active").value(false));
+    }
+
+    @Test
+    void allowsFrontEndOrigin() throws Exception {
+        mvc.perform(options("/api/groups/1/members/2")
+                        .header("Origin", "http://localhost:4200")
+                        .header("Access-Control-Request-Method", "DELETE"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:4200"));
+    }
+
+    @Test
+    void rejectsUnknownOrigin() throws Exception {
+        mvc.perform(options("/api/groups")
+                        .header("Origin", "http://evil.example")
+                        .header("Access-Control-Request-Method", "POST"))
+                .andExpect(status().isForbidden());
     }
 }
