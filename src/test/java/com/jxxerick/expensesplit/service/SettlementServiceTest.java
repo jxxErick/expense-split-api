@@ -9,6 +9,7 @@ import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.model.Settlement;
 import com.jxxerick.expensesplit.repository.SettlementRepository;
 import com.jxxerick.expensesplit.service.activity.GroupActivityEvent;
+import com.jxxerick.expensesplit.service.balance.DebtSimplifier;
 import com.jxxerick.expensesplit.support.TestData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,12 +24,15 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -54,7 +58,8 @@ class SettlementServiceTest {
 
     @BeforeEach
     void setUp() {
-        settlementService = new SettlementService(settlementRepository, groupService, balanceService, CLOCK, events);
+        settlementService = new SettlementService(settlementRepository, groupService, balanceService,
+                new DebtSimplifier(), CLOCK, events);
         group = TestData.group(1L, "Casa", "Ana", "Bruno", "Carla");
         when(groupService.getGroup(1L)).thenReturn(group);
     }
@@ -120,6 +125,42 @@ class SettlementServiceTest {
     void rejectsMemberOutsideGroup() {
         assertThatThrownBy(() -> settlementService.create(1L, request(2L, 77L, "5.00")))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void settleUpRecordsEverySimplifiedTransfer() {
+        givenBalances("60.00", "-10.00", "-50.00");
+        when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        List<SettlementResponse> settled = settlementService.settleUp(1L, null);
+
+        assertThat(settled).extracting(s -> s.from().name(), s -> s.to().name(), s -> s.amount().toPlainString(),
+                        SettlementResponse::paidAt)
+                .containsExactly(
+                        tuple("Carla", "Ana", "50.00", LocalDate.of(2026, 11, 17)),
+                        tuple("Bruno", "Ana", "10.00", LocalDate.of(2026, 11, 17)));
+        verify(events, times(2)).publishEvent(any(GroupActivityEvent.class));
+    }
+
+    @Test
+    void settleUpUsesGivenDate() {
+        givenBalances("10.00", "-10.00", "0.00");
+        when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        List<SettlementResponse> settled = settlementService.settleUp(1L, LocalDate.of(2026, 11, 1));
+
+        assertThat(settled).singleElement().extracting(SettlementResponse::paidAt)
+                .isEqualTo(LocalDate.of(2026, 11, 1));
+    }
+
+    @Test
+    void settleUpRejectsGroupAlreadySettled() {
+        givenBalances("0.00", "0.00", "0.00");
+
+        assertThatThrownBy(() -> settlementService.settleUp(1L, null))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Todos os saldos do grupo já estão zerados");
+        verify(settlementRepository, never()).save(any());
     }
 
     private void givenBalances(String ana, String bruno, String carla) {

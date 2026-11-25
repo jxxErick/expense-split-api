@@ -47,7 +47,7 @@ public class RecurringExpenseService {
             throw new BusinessException("A data final deve ser igual ou posterior à primeira cobrança");
         }
         Group group = groupService.getGroup(groupId);
-        Member payer = ExpenseService.memberOf(group, request.payerId());
+        Member payer = ExpenseService.activeMemberOf(group, request.payerId());
         expenseService.calculateShares(group, request.toExpenseRequest(request.startOn()));
 
         List<RecurringShare> shares = request.shares().stream()

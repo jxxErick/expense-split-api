@@ -60,6 +60,24 @@ Um acerto (`Settlement`) registra um pagamento entre dois membros. Ele só é ac
 realmente deve, quem recebe realmente tem a receber, e o valor não passa de nenhuma das duas
 dívidas, então ninguém troca de lado por engano.
 
+**Quitar tudo de uma vez**: `POST /api/groups/{id}/settlements/settle-up` (corpo opcional
+`{"paidAt": "2026-11-20"}`) registra **todas** as transferências do plano simplificado numa única
+transação, deixando todos os saldos em zero. Cada acerto entra no feed de atividades; se o grupo já
+está quite, a resposta é `422`.
+
+### Saída de membros
+
+`DELETE /api/groups/{id}/members/{memberId}` tira alguém do grupo sem apagar nada: o membro fica
+**inativo** (`"active": false` nas respostas) e as despesas antigas continuam apontando para ele.
+
+- só sai quem está com **saldo zero** (`422` com "Bruno ainda deve R$ 10.00..." se não estiver);
+- quem participa de uma despesa recorrente ativa ou pausada precisa sair dela antes;
+- o grupo nunca fica sem nenhum membro ativo;
+- quem saiu não entra em despesas novas, e as despesas antigas em que ele aparece **não podem mais
+  ser editadas nem excluídas** (isso reabriria um saldo que ele já fechou);
+- adicionar de novo alguém com o mesmo nome **reativa** o mesmo membro (mesmo id), e o feed registra
+  `MEMBER_LEFT` e `MEMBER_REJOINED`.
+
 ### Categorias e edição
 
 Toda despesa tem uma `category` (`FOOD`, `GROCERIES`, `TRANSPORT`, `LODGING`, `LEISURE`, `BILLS`,
@@ -210,7 +228,8 @@ linha.
 | `POST` | `/api/groups` | Cria grupo com membros (moeda opcional, padrão `BRL`) |
 | `GET` | `/api/groups` | Lista grupos |
 | `GET` | `/api/groups/{id}` | Busca grupo |
-| `POST` | `/api/groups/{id}/members` | Adiciona membro |
+| `POST` | `/api/groups/{id}/members` | Adiciona membro (ou reativa quem saiu) |
+| `DELETE` | `/api/groups/{id}/members/{memberId}` | Membro sai do grupo (precisa de saldo zero) |
 | `POST` | `/api/groups/{id}/expenses` | Registra despesa (aceita `currency` + `exchangeRate`) |
 | `GET` | `/api/groups/{id}/expenses` | Lista despesas (filtro opcional `?category=FOOD`) |
 | `PUT` | `/api/groups/{id}/expenses/{expenseId}` | Edita despesa e recalcula a divisão |
@@ -221,6 +240,7 @@ linha.
 | `GET` | `/api/groups/{id}/reports/spending` | Relatório de gastos por período |
 | `POST` | `/api/groups/{id}/settlements` | Registra um acerto |
 | `GET` | `/api/groups/{id}/settlements` | Lista acertos |
+| `POST` | `/api/groups/{id}/settlements/settle-up` | Registra todas as transferências do plano de uma vez |
 | `POST` | `/api/groups/{id}/recurring-expenses` | Cria despesa recorrente |
 | `GET` | `/api/groups/{id}/recurring-expenses` | Lista despesas recorrentes |
 | `POST` | `/api/groups/{id}/recurring-expenses/{rid}/pause` | Pausa |
@@ -239,18 +259,18 @@ Erros seguem a **RFC 7807** (`application/problem+json`):
 ### Exemplo
 
 ```bash
-curl -X POST http://localhost:8080/api/groups -H "Content-Type: application/json" \
+curl -X POST http://localhost:8081/api/groups -H "Content-Type: application/json" \
   -d '{"name":"Viagem","members":["Ana","Bruno","Carla"]}'
 
-curl -X POST http://localhost:8080/api/groups/1/expenses -H "Content-Type: application/json" \
+curl -X POST http://localhost:8081/api/groups/1/expenses -H "Content-Type: application/json" \
   -d '{"description":"Hotel","amount":300.00,"payerId":1,"splitType":"EQUAL","category":"LODGING",
        "shares":[{"memberId":1},{"memberId":2},{"memberId":3}]}'
 
-curl -X POST http://localhost:8080/api/groups/1/expenses -H "Content-Type: application/json" \
+curl -X POST http://localhost:8081/api/groups/1/expenses -H "Content-Type: application/json" \
   -d '{"description":"Jantar","amount":90.00,"payerId":2,"splitType":"SHARES","category":"FOOD",
        "shares":[{"memberId":2,"value":2},{"memberId":3,"value":1}]}'
 
-curl http://localhost:8080/api/groups/1/debts
+curl http://localhost:8081/api/groups/1/debts
 ```
 
 ```json
@@ -259,6 +279,15 @@ curl http://localhost:8080/api/groups/1/debts
   { "from": { "id": 2, "name": "Bruno" }, "to": { "id": 1, "name": "Ana" }, "amount": 70.00 }
 ]
 ```
+
+## Front-end
+
+Há uma interface web em Angular que usa esta API e a [customer-api](https://github.com/jxxErick/customer-api):
+**[customer-expense-web](https://github.com/jxxErick/customer-expense-web)** (despesas, saldos,
+"quitar tudo", membros, atividade e relatório).
+
+A API sobe na porta **8081** (a 8080 fica com a customer-api) e libera `http://localhost:4200` no
+CORS; outra origem pode ser configurada em `CORS_ALLOWED_ORIGINS` (lista separada por vírgula).
 
 ## Como rodar
 

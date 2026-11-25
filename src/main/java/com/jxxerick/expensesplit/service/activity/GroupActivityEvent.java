@@ -27,6 +27,16 @@ public record GroupActivityEvent(Long groupId, ActivityType type, String summary
                 "%s entrou no grupo".formatted(member.getName()), null, member.getId());
     }
 
+    public static GroupActivityEvent memberLeft(Group group, Member member) {
+        return new GroupActivityEvent(group.getId(), ActivityType.MEMBER_LEFT,
+                "%s saiu do grupo".formatted(member.getName()), null, member.getId());
+    }
+
+    public static GroupActivityEvent memberRejoined(Group group, Member member) {
+        return new GroupActivityEvent(group.getId(), ActivityType.MEMBER_REJOINED,
+                "%s voltou ao grupo".formatted(member.getName()), null, member.getId());
+    }
+
     /** A foreign expense shows both values: "Ana pagou US$ 100.00 (R$ 540.00) em 'Hotel'". */
     public static GroupActivityEvent expenseCreated(Expense expense) {
         String paid = expense.isForeign()
@@ -66,7 +76,7 @@ public record GroupActivityEvent(Long groupId, ActivityType type, String summary
     }
 
     /** Symbol as written in Brazil: R$, US$, € ... */
-    static String money(String currency, BigDecimal amount) {
+    public static String money(String currency, BigDecimal amount) {
         return Currency.getInstance(currency).getSymbol(PT_BR) + " " + amount;
     }
 }

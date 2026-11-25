@@ -6,6 +6,7 @@ import com.jxxerick.expensesplit.exception.BusinessException;
 import com.jxxerick.expensesplit.exception.ResourceNotFoundException;
 import com.jxxerick.expensesplit.model.Expense;
 import com.jxxerick.expensesplit.model.ExpenseCategory;
+import com.jxxerick.expensesplit.model.ExpenseShare;
 import com.jxxerick.expensesplit.model.Group;
 import com.jxxerick.expensesplit.model.Member;
 import com.jxxerick.expensesplit.model.SplitType;
@@ -23,6 +24,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.stream.Stream;
 
 @Service
 public class ExpenseService {
@@ -45,7 +47,7 @@ public class ExpenseService {
     @Transactional
     public ExpenseResponse create(Long groupId, CreateExpenseRequest request) {
         Group group = groupService.getGroup(groupId);
-        Member payer = memberOf(group, request.payerId());
+        Member payer = activeMemberOf(group, request.payerId());
         Conversion conversion = convert(group, request);
 
         LocalDate spentAt = request.spentAt() != null ? request.spentAt() : LocalDate.now(clock);
@@ -64,7 +66,8 @@ public class ExpenseService {
     public ExpenseResponse update(Long groupId, Long expenseId, CreateExpenseRequest request) {
         Group group = groupService.getGroup(groupId);
         Expense expense = findInGroup(groupId, expenseId);
-        Member payer = memberOf(group, request.payerId());
+        ensureOnlyActiveMembers(expense);
+        Member payer = activeMemberOf(group, request.payerId());
         Conversion conversion = convert(group, request);
 
         BigDecimal previousAmount = expense.getAmount();
@@ -92,6 +95,7 @@ public class ExpenseService {
     @Transactional
     public void delete(Long groupId, Long expenseId) {
         Expense expense = findInGroup(groupId, expenseId);
+        ensureOnlyActiveMembers(expense);
         expenseRepository.delete(expense);
         events.publishEvent(GroupActivityEvent.expenseDeleted(expense));
     }
@@ -109,7 +113,7 @@ public class ExpenseService {
 
     private List<Share> calculateShares(Group group, CreateExpenseRequest request, BigDecimal total) {
         List<SplitEntry> entries = request.shares().stream()
-                .map(s -> new SplitEntry(memberOf(group, s.memberId()).getId(), s.value()))
+                .map(s -> new SplitEntry(activeMemberOf(group, s.memberId()).getId(), s.value()))
                 .toList();
         return splitCalculator.calculate(request.splitType(), total, entries);
     }
@@ -150,10 +154,30 @@ public class ExpenseService {
     }
 
     private static void addShares(Group group, Expense expense, List<Share> shares) {
-        shares.forEach(share -> expense.addShare(memberOf(group, share.memberId()), share.amount()));
+        shares.forEach(share -> expense.addShare(activeMemberOf(group, share.memberId()), share.amount()));
     }
 
     static Member memberOf(Group group, Long memberId) {
         return group.findMember(memberId).orElseThrow(() -> ResourceNotFoundException.member(memberId));
+    }
+
+    /** New expenses only involve people still in the group. */
+    static Member activeMemberOf(Group group, Long memberId) {
+        Member member = memberOf(group, memberId);
+        if (!member.isActive()) {
+            throw new BusinessException("%s saiu do grupo".formatted(member.getName()));
+        }
+        return member;
+    }
+
+    /** Changing an expense of someone who left would reopen a balance they already closed. */
+    private static void ensureOnlyActiveMembers(Expense expense) {
+        Stream.concat(Stream.of(expense.getPayer()), expense.getShares().stream().map(ExpenseShare::getMember))
+                .filter(member -> !member.isActive())
+                .findFirst()
+                .ifPresent(member -> {
+                    throw new BusinessException("%s saiu do grupo; essa despesa não pode mais ser alterada"
+                            .formatted(member.getName()));
+                });
     }
 }

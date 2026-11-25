@@ -1,6 +1,7 @@
 package com.jxxerick.expensesplit.controller;
 
 import com.jxxerick.expensesplit.dto.CreateSettlementRequest;
+import com.jxxerick.expensesplit.dto.SettleUpRequest;
 import com.jxxerick.expensesplit.dto.SettlementResponse;
 import com.jxxerick.expensesplit.service.SettlementService;
 import jakarta.validation.Valid;
@@ -29,6 +30,14 @@ public class SettlementController {
     @ResponseStatus(HttpStatus.CREATED)
     public SettlementResponse create(@PathVariable Long groupId, @Valid @RequestBody CreateSettlementRequest request) {
         return settlementService.create(groupId, request);
+    }
+
+    /** Pays off every debt of the group following the simplified plan. */
+    @PostMapping("/settle-up")
+    @ResponseStatus(HttpStatus.CREATED)
+    public List<SettlementResponse> settleUp(@PathVariable Long groupId,
+                                             @Valid @RequestBody(required = false) SettleUpRequest request) {
+        return settlementService.settleUp(groupId, request == null ? null : request.paidAt());
     }
 
     @GetMapping
