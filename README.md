@@ -238,6 +238,28 @@ linha.
 }
 ```
 
+### Planilha do grupo (CSV)
+
+`GET /api/groups/{id}/export` baixa o grupo inteiro numa planilha que o Excel em pt-BR abre direto
+(`;` entre colunas, vírgula decimal e BOM UTF-8 para os acentos):
+
+```csv
+data;tipo;descrição;categoria;pago por;valor (BRL);moeda original;valor original;cotação;Ana;Bruno;Carla
+2026-11-20;Despesa;Hotel;Hospedagem;Ana;540,00;USD;100,00;5,4;360,00;-180,00;-180,00
+2026-11-26;Acerto;Bruno pagou Ana;;Bruno;180,00;USD;33,34;5,4;-180,00;180,00;
+;Saldo;;;;;;;;180,00;0,00;-180,00
+```
+
+- uma linha por despesa ou acerto, da mais antiga para a mais nova (no mesmo dia, despesas antes
+  dos acertos, igual ao extrato do membro);
+- **uma coluna por membro** com o quanto aquela linha mexeu no saldo dele (`pagou - parte` numa
+  despesa, `+enviado` / `-recebido` num acerto); célula vazia é quem não participou;
+- a última linha soma as colunas e dá **os mesmos saldos** de `/balances` (há teste garantindo isso),
+  então dá para conferir as contas no próprio Excel com um `SOMA`;
+- despesas e acertos em outra moeda mostram moeda, valor original e cotação;
+- descrições e nomes passam pela proteção contra **CSV injection**: texto que começa com `=`, `+`,
+  `-` ou `@` ganha um `'` na frente para a planilha não executar como fórmula.
+
 ### Comanda por itens
 
 No restaurante ninguém divide igual: um pediu suco, outro tomou três cervejas, a pizza foi de
@@ -301,6 +323,7 @@ zerada, o mesmo membro não aparece duas vezes num item e só membros ativos par
 | `GET` | `/api/groups/{id}/debts` | Transferências sugeridas (simplificadas) |
 | `GET` | `/api/groups/{id}/members/{memberId}/statement?from=&to=` | Extrato do membro com saldo acumulado |
 | `GET` | `/api/groups/{id}/reports/spending` | Relatório de gastos por período |
+| `GET` | `/api/groups/{id}/export` | Planilha CSV com todas as despesas, acertos e saldos |
 | `POST` | `/api/groups/{id}/settlements` | Registra um acerto (aceita `currency` + `exchangeRate`) |
 | `GET` | `/api/groups/{id}/settlements` | Lista acertos |
 | `POST` | `/api/groups/{id}/settlements/settle-up` | Registra todas as transferências do plano de uma vez |
