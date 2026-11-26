@@ -44,6 +44,16 @@ public class Settlement {
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
+    /** Set only when paid in a currency other than the group's; {@code amount} is then the converted value. */
+    @Column(length = 3)
+    private String originalCurrency;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal originalAmount;
+
+    @Column(precision = 15, scale = 6)
+    private BigDecimal exchangeRate;
+
     protected Settlement() {
     }
 
@@ -54,6 +64,28 @@ public class Settlement {
         this.amount = amount;
         this.paidAt = paidAt;
         this.createdAt = Instant.now();
+    }
+
+    public void paidInForeignCurrency(String currency, BigDecimal foreignAmount, BigDecimal rate) {
+        this.originalCurrency = currency;
+        this.originalAmount = foreignAmount;
+        this.exchangeRate = rate;
+    }
+
+    public boolean isForeign() {
+        return originalCurrency != null;
+    }
+
+    public String getOriginalCurrency() {
+        return originalCurrency;
+    }
+
+    public BigDecimal getOriginalAmount() {
+        return originalAmount;
+    }
+
+    public BigDecimal getExchangeRate() {
+        return exchangeRate;
     }
 
     public Long getId() {

@@ -11,6 +11,7 @@ import com.jxxerick.expensesplit.repository.SettlementRepository;
 import com.jxxerick.expensesplit.service.activity.GroupActivityEvent;
 import com.jxxerick.expensesplit.service.balance.DebtSimplifier;
 import com.jxxerick.expensesplit.service.balance.Transfer;
+import com.jxxerick.expensesplit.service.currency.CurrencyConverter;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -67,12 +68,18 @@ public class SettlementService {
             throw new BusinessException("%s não tem valores a receber no grupo".formatted(to.getName()));
         }
         BigDecimal limit = debt.min(credit);
-        if (request.amount().compareTo(limit) > 0) {
-            throw new BusinessException("O valor máximo desse acerto é R$ %s".formatted(limit));
-        }
+        String currency = request.currency() == null ? group.getCurrency()
+                : CurrencyConverter.normalize(request.currency());
+        boolean foreign = !currency.equals(group.getCurrency());
+        BigDecimal amount = foreign
+                ? convertedAmount(group, currency, request, limit)
+                : localAmount(group, request, limit);
 
         LocalDate paidAt = request.paidAt() != null ? request.paidAt() : LocalDate.now(clock);
-        Settlement settlement = new Settlement(group, from, to, request.amount(), paidAt);
+        Settlement settlement = new Settlement(group, from, to, amount, paidAt);
+        if (foreign) {
+            settlement.paidInForeignCurrency(currency, request.amount(), request.exchangeRate());
+        }
         Settlement saved = settlementRepository.save(settlement);
         events.publishEvent(GroupActivityEvent.settlementRecorded(saved));
         return SettlementResponse.from(saved);
@@ -106,6 +113,40 @@ public class SettlementService {
         return settlementRepository.findByGroupIdOrderByPaidAtDescIdDesc(groupId).stream()
                 .map(SettlementResponse::from)
                 .toList();
+    }
+
+    private static BigDecimal localAmount(Group group, CreateSettlementRequest request, BigDecimal limit) {
+        if (request.exchangeRate() != null) {
+            throw new BusinessException("A cotação só vale para acertos em outra moeda");
+        }
+        if (request.amount().compareTo(limit) > 0) {
+            throw new BusinessException("O valor máximo desse acerto é %s"
+                    .formatted(GroupActivityEvent.money(group.getCurrency(), limit)));
+        }
+        return request.amount();
+    }
+
+    /**
+     * Converts a payment made in another currency. A foreign amount rarely lands on the exact
+     * cent of the debt, so when it is less than one foreign cent away from the limit it pays the
+     * debt off exactly instead of leaving a few cents behind or being rejected.
+     */
+    private static BigDecimal convertedAmount(Group group, String currency, CreateSettlementRequest request,
+                                              BigDecimal limit) {
+        BigDecimal rate = request.exchangeRate();
+        if (rate == null) {
+            throw new BusinessException("Informe a cotação de %s para %s".formatted(currency, group.getCurrency()));
+        }
+        BigDecimal converted = CurrencyConverter.convert(request.amount(), rate);
+        if (CurrencyConverter.withinOneForeignCent(converted, limit, rate)) {
+            return limit;
+        }
+        if (converted.compareTo(limit) > 0) {
+            throw new BusinessException("O valor máximo desse acerto é %s (%s nessa cotação)".formatted(
+                    GroupActivityEvent.money(group.getCurrency(), limit),
+                    GroupActivityEvent.money(currency, CurrencyConverter.maxForeignAmount(limit, rate))));
+        }
+        return converted;
     }
 
     private static Member memberOf(Group group, Long memberId) {

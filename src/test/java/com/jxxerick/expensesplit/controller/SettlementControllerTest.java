@@ -48,6 +48,17 @@ class SettlementControllerTest {
     }
 
     @Test
+    void rejectsMalformedCurrencyAndRate() throws Exception {
+        mvc.perform(post("/api/groups/1/settlements").contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"fromMemberId": 2, "toMemberId": 1, "amount": 10, "currency": "US", "exchangeRate": 0}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.currency").value("use o código ISO de 3 letras (ex.: USD)"))
+                .andExpect(jsonPath("$.errors.exchangeRate").value("deve ser maior que zero"));
+    }
+
+    @Test
     void rejectsNonPositiveAmountAndFutureDate() throws Exception {
         mvc.perform(post("/api/groups/1/settlements").contentType(MediaType.APPLICATION_JSON)
                         .content("""

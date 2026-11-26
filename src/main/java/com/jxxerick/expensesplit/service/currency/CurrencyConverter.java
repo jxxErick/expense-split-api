@@ -36,6 +36,17 @@ public final class CurrencyConverter {
         return converted;
     }
 
+    /** Largest foreign amount, in cents, whose conversion does not exceed {@code limit}. */
+    public static BigDecimal maxForeignAmount(BigDecimal limit, BigDecimal rate) {
+        return limit.divide(rate, 2, RoundingMode.DOWN);
+    }
+
+    /** True when {@code converted} is closer to {@code target} than one cent of the foreign currency is worth. */
+    public static boolean withinOneForeignCent(BigDecimal converted, BigDecimal target, BigDecimal rate) {
+        BigDecimal oneForeignCent = rate.movePointLeft(2);
+        return converted.subtract(target).abs().compareTo(oneForeignCent) < 0;
+    }
+
     /**
      * Turns shares computed in the foreign currency into shares of the converted total,
      * keeping the proportions and making them add up to the total exactly.
