@@ -18,6 +18,7 @@ model/         entidades JPA (Group, Member, Expense, Settlement, RecurringExpen
 repository/    interfaces Spring Data
 service/       regras de negócio
   split/       estratégias de divisão + alocação de centavos
+  receipt/     divisão de comanda por itens (taxa de serviço e desconto)
   balance/     simplificação de dívidas
   activity/    eventos do feed de atividades
 controller/    endpoints REST
@@ -221,6 +222,50 @@ linha.
 }
 ```
 
+### Comanda por itens
+
+No restaurante ninguém divide igual: um pediu suco, outro tomou três cervejas, a pizza foi de
+todo mundo. `POST /api/groups/{id}/expenses/receipt` recebe a comanda **item a item**, cada um
+com quem consumiu, mais a taxa de serviço e um desconto opcionais:
+
+```json
+{
+  "description": "Pizzaria", "payerId": 2, "serviceChargePercent": 10, "discount": 10.00,
+  "items": [
+    { "description": "Pizza",   "unitPrice": 60.00, "memberIds": [1, 2, 3] },
+    { "description": "Cerveja", "unitPrice": 12.00, "quantity": 2, "memberIds": [1, 2] },
+    { "description": "Suco",    "unitPrice": 8.00,  "memberIds": [3] }
+  ]
+}
+```
+
+1. cada item é dividido **igualmente** entre quem consumiu (Pizza: 20 / 20 / 20);
+2. a taxa de serviço é calculada sobre o consumo e arredondada como na conta impressa
+   (10% de 92,00 = 9,20) e depois **rateada pelo que cada um consumiu**, não por cabeça;
+3. o desconto é rateado do mesmo jeito, então ninguém recebe mais desconto do que consumiu.
+
+Todos os passos usam o `MoneyAllocator`, então a soma das partes bate com o total no centavo
+(há teste parametrizado garantindo). O resultado vira uma despesa `EXACT` comum, que entra no
+saldo, no extrato e no feed como qualquer outra; sem `category`, ela vai como `FOOD`.
+
+`POST .../expenses/receipt/preview` faz a mesma conta **sem salvar**, para a tela mostrar quanto
+cada um vai pagar enquanto a comanda é montada:
+
+```json
+{
+  "subtotal": 92.00, "serviceCharge": 9.20, "discount": 10.00, "total": 91.20,
+  "members": [
+    { "memberId": 1, "name": "Ana",   "subtotal": 32.00, "serviceCharge": 3.20, "discount": 3.48, "total": 31.72 },
+    { "memberId": 2, "name": "Bruno", "subtotal": 32.00, "serviceCharge": 3.20, "discount": 3.48, "total": 31.72 },
+    { "memberId": 3, "name": "Carla", "subtotal": 28.00, "serviceCharge": 2.80, "discount": 3.04, "total": 27.76 }
+  ]
+}
+```
+
+Regras: taxa de serviço de 0 a 30%, desconto até o valor consumido, a comanda não pode ficar
+zerada, o mesmo membro não aparece duas vezes num item e só membros ativos participam. A comanda
+é sempre na moeda do grupo.
+
 ## Endpoints
 
 | Método | Rota | Descrição |
@@ -234,6 +279,8 @@ linha.
 | `GET` | `/api/groups/{id}/expenses` | Lista despesas (filtro opcional `?category=FOOD`) |
 | `PUT` | `/api/groups/{id}/expenses/{expenseId}` | Edita despesa e recalcula a divisão |
 | `DELETE` | `/api/groups/{id}/expenses/{expenseId}` | Remove despesa |
+| `POST` | `/api/groups/{id}/expenses/receipt` | Registra uma comanda dividida por itens |
+| `POST` | `/api/groups/{id}/expenses/receipt/preview` | Simula a comanda sem salvar |
 | `GET` | `/api/groups/{id}/balances` | Saldo de cada membro |
 | `GET` | `/api/groups/{id}/debts` | Transferências sugeridas (simplificadas) |
 | `GET` | `/api/groups/{id}/members/{memberId}/statement?from=&to=` | Extrato do membro com saldo acumulado |
