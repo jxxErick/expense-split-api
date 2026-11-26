@@ -193,6 +193,22 @@ relatórios e orçamentos ficam nela. Uma despesa paga em outra moeda informa a 
 - O feed mostra os dois valores: `Ana pagou US$ 100.00 (R$ 543.21) em 'Jantar'`.
 - Editar a despesa para a moeda do grupo limpa os dados da moeda estrangeira.
 
+**Acertos em outra moeda**: quem paga a dívida em dólar manda `currency` e `exchangeRate` no acerto,
+com as mesmas regras (ISO 4217, cotação obrigatória só para moeda estrangeira):
+
+```json
+{ "fromMemberId": 2, "toMemberId": 1, "amount": 9.31, "currency": "USD", "exchangeRate": 5.37 }
+```
+
+- O limite (o que um deve e o outro tem a receber) é conferido **depois** da conversão. Passou do
+  limite, o `422` mostra os dois valores: `O valor máximo desse acerto é R$ 10.00 (US$ 1.85 nessa cotação)`.
+- Um valor em dólar quase nunca cai no centavo exato da dívida (9,31 × 5,37 = 49,99 e
+  9,32 × 5,37 = 50,05 para uma dívida de R$ 50,00). Se o convertido fica a **menos de um centavo da
+  moeda estrangeira** do limite, o acerto quita a dívida exatamente, em vez de deixar R$ 0,01
+  pendurado ou recusar o pagamento.
+- A resposta e a listagem trazem `foreign: { currency, amount, exchangeRate }`, e o feed mostra
+  `Bruno pagou US$ 9.31 (R$ 50.00) para Ana`.
+
 ### Extrato do membro
 
 `GET /api/groups/{id}/members/{memberId}/statement?from=2026-11-01&to=2026-11-30` mostra a vida
@@ -285,7 +301,7 @@ zerada, o mesmo membro não aparece duas vezes num item e só membros ativos par
 | `GET` | `/api/groups/{id}/debts` | Transferências sugeridas (simplificadas) |
 | `GET` | `/api/groups/{id}/members/{memberId}/statement?from=&to=` | Extrato do membro com saldo acumulado |
 | `GET` | `/api/groups/{id}/reports/spending` | Relatório de gastos por período |
-| `POST` | `/api/groups/{id}/settlements` | Registra um acerto |
+| `POST` | `/api/groups/{id}/settlements` | Registra um acerto (aceita `currency` + `exchangeRate`) |
 | `GET` | `/api/groups/{id}/settlements` | Lista acertos |
 | `POST` | `/api/groups/{id}/settlements/settle-up` | Registra todas as transferências do plano de uma vez |
 | `POST` | `/api/groups/{id}/recurring-expenses` | Cria despesa recorrente |
