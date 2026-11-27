@@ -10,6 +10,7 @@ import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -44,8 +45,24 @@ public record CreateRecurringExpenseRequest(
         LocalDate endOn,
 
         @NotEmpty(message = "informe os participantes")
-        List<@Valid ShareRequest> shares
+        List<@Valid ShareRequest> shares,
+
+        // currency the amount and EXACT values are in; missing means the group currency
+        @Pattern(regexp = "[A-Za-z]{3}", message = "use o código ISO de 3 letras (ex.: USD)")
+        String currency,
+
+        // group-currency units per 1 unit of currency; required for a foreign currency
+        @DecimalMin(value = "0.000001", message = "deve ser maior que zero")
+        @Digits(integer = 9, fraction = 6, message = "no máximo 6 casas decimais")
+        BigDecimal exchangeRate
 ) {
+
+    /** Template in the group currency. */
+    public CreateRecurringExpenseRequest(String description, BigDecimal amount, Long payerId, SplitType splitType,
+                                         ExpenseCategory category, RecurrenceFrequency frequency, LocalDate startOn,
+                                         LocalDate endOn, List<ShareRequest> shares) {
+        this(description, amount, payerId, splitType, category, frequency, startOn, endOn, shares, null, null);
+    }
 
     public ExpenseCategory categoryOrDefault() {
         return category != null ? category : ExpenseCategory.OTHER;
@@ -53,6 +70,7 @@ public record CreateRecurringExpenseRequest(
 
     /** The expense this template produces on {@code spentAt}. */
     public CreateExpenseRequest toExpenseRequest(LocalDate spentAt) {
-        return new CreateExpenseRequest(description, amount, payerId, splitType, categoryOrDefault(), spentAt, shares);
+        return new CreateExpenseRequest(description, amount, payerId, splitType, categoryOrDefault(), spentAt, shares,
+                currency, exchangeRate);
     }
 }

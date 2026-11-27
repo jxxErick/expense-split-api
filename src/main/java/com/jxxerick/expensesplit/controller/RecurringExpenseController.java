@@ -1,6 +1,7 @@
 package com.jxxerick.expensesplit.controller;
 
 import com.jxxerick.expensesplit.dto.CreateRecurringExpenseRequest;
+import com.jxxerick.expensesplit.dto.ExchangeRateRequest;
 import com.jxxerick.expensesplit.dto.ExpenseResponse;
 import com.jxxerick.expensesplit.dto.RecurringExpenseResponse;
 import com.jxxerick.expensesplit.service.RecurringExpenseService;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -53,6 +55,13 @@ public class RecurringExpenseController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long groupId, @PathVariable Long recurringId) {
         recurringExpenseService.delete(groupId, recurringId);
+    }
+
+    /** Next occurrences are converted with the new rate. */
+    @PutMapping("/{recurringId}/exchange-rate")
+    public RecurringExpenseResponse changeExchangeRate(@PathVariable Long groupId, @PathVariable Long recurringId,
+                                                       @Valid @RequestBody ExchangeRateRequest request) {
+        return recurringExpenseService.changeExchangeRate(groupId, recurringId, request.exchangeRate());
     }
 
     /** Generates every due occurrence now; returns the expenses created. */

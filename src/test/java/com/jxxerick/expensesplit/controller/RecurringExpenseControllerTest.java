@@ -27,6 +27,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -91,6 +92,32 @@ class RecurringExpenseControllerTest {
     }
 
     @Test
+    void changesExchangeRate() throws Exception {
+        RecurringExpenseResponse streaming = new RecurringExpenseResponse(5L, "Streaming", new BigDecimal("15.99"),
+                "USD", new BigDecimal("5.40"), new BigDecimal("86.35"), new MemberResponse(1L, "Ana"), SplitType.EQUAL,
+                ExpenseCategory.LEISURE, RecurrenceFrequency.MONTHLY, NEXT_MONTH, null, RecurringStatus.ACTIVE,
+                NEXT_MONTH, 2, List.of());
+        when(recurringExpenseService.changeExchangeRate(1L, 5L, new BigDecimal("5.40"))).thenReturn(streaming);
+
+        mvc.perform(put("/api/groups/1/recurring-expenses/5/exchange-rate").contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"exchangeRate": 5.40}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currency").value("USD"))
+                .andExpect(jsonPath("$.convertedAmount").value(86.35));
+    }
+
+    @Test
+    void rejectsMissingExchangeRate() throws Exception {
+        mvc.perform(put("/api/groups/1/recurring-expenses/5/exchange-rate").contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.exchangeRate").value("informe a cotação"));
+        verifyNoInteractions(recurringExpenseService);
+    }
+
+    @Test
     void deletesTemplate() throws Exception {
         mvc.perform(delete("/api/groups/1/recurring-expenses/4"))
                 .andExpect(status().isNoContent());
@@ -98,7 +125,8 @@ class RecurringExpenseControllerTest {
     }
 
     private static RecurringExpenseResponse response(RecurringStatus status) {
-        return new RecurringExpenseResponse(4L, "Aluguel", new BigDecimal("1500.00"), new MemberResponse(1L, "Ana"),
+        return new RecurringExpenseResponse(4L, "Aluguel", new BigDecimal("1500.00"), "BRL", null,
+                new BigDecimal("1500.00"), new MemberResponse(1L, "Ana"),
                 SplitType.EQUAL, ExpenseCategory.BILLS, RecurrenceFrequency.MONTHLY, NEXT_MONTH, null, status,
                 NEXT_MONTH, 0, List.of(new RecurringExpenseResponse.Participant(1L, "Ana", null)));
     }
