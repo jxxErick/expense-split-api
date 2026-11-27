@@ -209,6 +209,24 @@ com as mesmas regras (ISO 4217, cotação obrigatória só para moeda estrangeir
 - A resposta e a listagem trazem `foreign: { currency, amount, exchangeRate }`, e o feed mostra
   `Bruno pagou US$ 9.31 (R$ 50.00) para Ana`.
 
+**Recorrentes em outra moeda**: a assinatura cobrada em dólar vira um modelo com `currency` e
+`exchangeRate`, validado com as mesmas regras de uma despesa (divisão na moeda do recibo, cotação
+obrigatória só para moeda estrangeira):
+
+```json
+{ "description": "Streaming", "amount": 15.99, "currency": "USD", "exchangeRate": 5.25,
+  "payerId": 1, "splitType": "EQUAL", "frequency": "MONTHLY", "startOn": "2026-12-01",
+  "shares": [{"memberId": 1}, {"memberId": 2}, {"memberId": 3}] }
+```
+
+- Cada ocorrência gerada é uma despesa estrangeira normal (`foreign: { currency, amount, exchangeRate }`),
+  convertida com a cotação **atual** do modelo.
+- A cotação muda com `PUT /recurring-expenses/{rid}/exchange-rate` (`{ "exchangeRate": 5.40 }`): vale
+  só para as próximas ocorrências; as despesas já geradas mantêm a cotação com que foram criadas.
+  Num modelo na moeda do grupo, ou com uma cotação que converte abaixo de um centavo → `422`.
+- A listagem mostra `amount` + `currency` (o que é cobrado) e `convertedAmount` (quanto a próxima
+  ocorrência vai custar ao grupo).
+
 ### Extrato do membro
 
 `GET /api/groups/{id}/members/{memberId}/statement?from=2026-11-01&to=2026-11-30` mostra a vida
@@ -331,6 +349,7 @@ zerada, o mesmo membro não aparece duas vezes num item e só membros ativos par
 | `GET` | `/api/groups/{id}/recurring-expenses` | Lista despesas recorrentes |
 | `POST` | `/api/groups/{id}/recurring-expenses/{rid}/pause` | Pausa |
 | `POST` | `/api/groups/{id}/recurring-expenses/{rid}/resume` | Retoma (sem cobrar o período pausado) |
+| `PUT` | `/api/groups/{id}/recurring-expenses/{rid}/exchange-rate` | Atualiza a cotação das próximas ocorrências |
 | `DELETE` | `/api/groups/{id}/recurring-expenses/{rid}` | Remove o modelo (as despesas ficam) |
 | `POST` | `/api/groups/{id}/recurring-expenses/run` | Gera agora as ocorrências vencidas |
 | `GET` | `/api/groups/{id}/budgets` | Lista orçamentos |
