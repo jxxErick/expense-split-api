@@ -227,6 +227,30 @@ obrigatória só para moeda estrangeira):
 - A listagem mostra `amount` + `currency` (o que é cobrado) e `convertedAmount` (quanto a próxima
   ocorrência vai custar ao grupo).
 
+### Idade das dívidas
+
+`GET /groups/{id}/debts/aging` responde "quem está devendo **há quanto tempo**", como o aging de
+contas a receber de uma empresa:
+
+- Cada movimento que aumenta a dívida de alguém abre um **lote** datado naquele dia; cada pagamento
+  (acerto enviado ou despesa que a pessoa pagou) quita os lotes **mais antigos primeiro** (FIFO).
+- Crédito que a pessoa já tinha absorve dívida nova antes de abrir lote; dívidas do mesmo dia viram
+  um lote só.
+- O que sobra aberto é a dívida atual, distribuída em faixas: `UP_TO_30_DAYS`, `FROM_31_TO_60_DAYS`,
+  `FROM_61_TO_90_DAYS` e `OVER_90_DAYS` — por membro e no total do grupo. A soma dos lotes de cada um
+  bate com o saldo negativo de `/balances`.
+- Só aparece quem deve, ordenado pela dívida mais antiga. `?asOf=2026-10-01` reconstrói a posição
+  numa data passada (movimentos depois dela são ignorados); data no futuro → `422`.
+
+```json
+{ "asOf": "2026-11-27", "totalOwed": 65.00,
+  "buckets": { "UP_TO_30_DAYS": 15.00, "FROM_31_TO_60_DAYS": 10.00, "FROM_61_TO_90_DAYS": 0.00, "OVER_90_DAYS": 40.00 },
+  "members": [
+    { "member": { "id": 2, "name": "Bruno" }, "owed": 50.00, "oldestSince": "2026-08-10", "oldestDays": 109,
+      "openDebts": [ { "since": "2026-08-10", "days": 109, "amount": 40.00 },
+                     { "since": "2026-10-05", "days": 53, "amount": 10.00 } ] } ] }
+```
+
 ### Extrato do membro
 
 `GET /api/groups/{id}/members/{memberId}/statement?from=2026-11-01&to=2026-11-30` mostra a vida
@@ -339,6 +363,7 @@ zerada, o mesmo membro não aparece duas vezes num item e só membros ativos par
 | `POST` | `/api/groups/{id}/expenses/receipt/preview` | Simula a comanda sem salvar |
 | `GET` | `/api/groups/{id}/balances` | Saldo de cada membro |
 | `GET` | `/api/groups/{id}/debts` | Transferências sugeridas (simplificadas) |
+| `GET` | `/api/groups/{id}/debts/aging?asOf=` | Idade das dívidas por faixa (FIFO) |
 | `GET` | `/api/groups/{id}/members/{memberId}/statement?from=&to=` | Extrato do membro com saldo acumulado |
 | `GET` | `/api/groups/{id}/reports/spending` | Relatório de gastos por período |
 | `GET` | `/api/groups/{id}/export` | Planilha CSV com todas as despesas, acertos e saldos |
