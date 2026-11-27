@@ -37,8 +37,16 @@ public class RecurringExpense {
     @Column(nullable = false, length = 120)
     private String description;
 
+    /** In {@code currency} when set, otherwise in the group currency. */
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal amount;
+
+    /** Set only when charged in a currency other than the group's (e.g. a streaming plan billed in USD). */
+    @Column(length = 3)
+    private String currency;
+
+    @Column(precision = 16, scale = 6)
+    private BigDecimal exchangeRate;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "payer_id", nullable = false)
@@ -117,6 +125,24 @@ public class RecurringExpense {
         return current;
     }
 
+    /** The amount is in {@code foreignCurrency}; each occurrence is converted with the current rate. */
+    public void chargeInForeignCurrency(String foreignCurrency, BigDecimal rate) {
+        this.currency = foreignCurrency;
+        this.exchangeRate = rate;
+    }
+
+    /** Applies to the next occurrences only; expenses already generated keep their rate. */
+    public void changeExchangeRate(BigDecimal rate) {
+        if (!isForeign()) {
+            throw new IllegalStateException("Recurring expense is in the group currency");
+        }
+        this.exchangeRate = rate;
+    }
+
+    public boolean isForeign() {
+        return currency != null;
+    }
+
     public void pause() {
         if (status == RecurringStatus.ACTIVE) {
             status = RecurringStatus.PAUSED;
@@ -156,6 +182,15 @@ public class RecurringExpense {
 
     public BigDecimal getAmount() {
         return amount;
+    }
+
+    /** Null when the template is in the group currency. */
+    public String getCurrency() {
+        return currency;
+    }
+
+    public BigDecimal getExchangeRate() {
+        return exchangeRate;
     }
 
     public Member getPayer() {

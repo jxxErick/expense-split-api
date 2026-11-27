@@ -16,6 +16,7 @@ import com.jxxerick.expensesplit.repository.RecurringExpenseRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -48,7 +49,7 @@ public class RecurringExpenseService {
         }
         Group group = groupService.getGroup(groupId);
         Member payer = ExpenseService.activeMemberOf(group, request.payerId());
-        expenseService.calculateShares(group, request.toExpenseRequest(request.startOn()));
+        ExpenseService.Conversion conversion = expenseService.convert(group, request.toExpenseRequest(request.startOn()));
 
         List<RecurringShare> shares = request.shares().stream()
                 .map(s -> new RecurringShare(s.memberId(), s.value()))
@@ -56,6 +57,9 @@ public class RecurringExpenseService {
         RecurringExpense recurring = new RecurringExpense(group, request.description().trim(), request.amount(),
                 payer, request.splitType(), request.categoryOrDefault(), request.frequency(), request.startOn(),
                 request.endOn(), shares);
+        if (conversion.foreignCurrency() != null) {
+            recurring.chargeInForeignCurrency(conversion.foreignCurrency(), request.exchangeRate());
+        }
         return RecurringExpenseResponse.from(recurringRepository.save(recurring));
     }
 
@@ -81,6 +85,25 @@ public class RecurringExpenseService {
         ensureNotFinished(recurring);
         recurring.resume(LocalDate.now(clock));
         return RecurringExpenseResponse.from(recurring);
+    }
+
+    /** New rate for the next occurrences; expenses already generated keep the rate they were created with. */
+    @Transactional
+    public RecurringExpenseResponse changeExchangeRate(Long groupId, Long recurringId, BigDecimal rate) {
+        RecurringExpense recurring = findInGroup(groupId, recurringId);
+        ensureNotFinished(recurring);
+        if (!recurring.isForeign()) {
+            throw new BusinessException("Essa despesa recorrente já está na moeda do grupo; não há cotação a atualizar");
+        }
+        CreateExpenseRequest next = toExpenseRequest(recurring, recurring.getNextRunOn());
+        expenseService.convert(recurring.getGroup(), withRate(next, rate));
+        recurring.changeExchangeRate(rate);
+        return RecurringExpenseResponse.from(recurring);
+    }
+
+    private static CreateExpenseRequest withRate(CreateExpenseRequest request, BigDecimal rate) {
+        return new CreateExpenseRequest(request.description(), request.amount(), request.payerId(),
+                request.splitType(), request.category(), request.spentAt(), request.shares(), request.currency(), rate);
     }
 
     /** Expenses already generated stay in the group. */
@@ -125,7 +148,8 @@ public class RecurringExpenseService {
                 .map(s -> new ShareRequest(s.getMemberId(), s.getValue()))
                 .toList();
         return new CreateExpenseRequest(recurring.getDescription(), recurring.getAmount(),
-                recurring.getPayer().getId(), recurring.getSplitType(), recurring.getCategory(), spentAt, shares);
+                recurring.getPayer().getId(), recurring.getSplitType(), recurring.getCategory(), spentAt, shares,
+                recurring.getCurrency(), recurring.getExchangeRate());
     }
 
     private static void ensureNotFinished(RecurringExpense recurring) {

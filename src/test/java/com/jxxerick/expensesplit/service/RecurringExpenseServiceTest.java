@@ -160,6 +160,71 @@ class RecurringExpenseServiceTest {
     }
 
     @Test
+    void createsTemplateInForeignCurrency() {
+        when(recurringRepository.save(any(RecurringExpense.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        RecurringExpenseResponse response = service.create(1L, foreignRequest("usd", new BigDecimal("5.25")));
+
+        assertThat(response.currency()).isEqualTo("USD");
+        assertThat(response.amount()).isEqualByComparingTo("15.99");
+        assertThat(response.convertedAmount()).isEqualByComparingTo("83.95");
+    }
+
+    @Test
+    void foreignTemplateRequiresExchangeRate() {
+        assertThatThrownBy(() -> service.create(1L, foreignRequest("USD", null)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("cotação");
+        verify(recurringRepository, never()).save(any());
+    }
+
+    @Test
+    void generatedOccurrencesAreConvertedWithTheCurrentRate() {
+        RecurringExpense streaming = streaming(TODAY.minusMonths(1), "5.00");
+        when(recurringRepository.findByGroupIdOrderByIdAsc(1L)).thenReturn(List.of(streaming));
+
+        List<ExpenseResponse> created = service.runDue(1L);
+
+        assertThat(created).hasSize(2).allSatisfy(expense -> {
+            assertThat(expense.amount()).isEqualByComparingTo("79.95");
+            assertThat(expense.foreign().currency()).isEqualTo("USD");
+            assertThat(expense.foreign().amount()).isEqualByComparingTo("15.99");
+        });
+    }
+
+    @Test
+    void changingTheRateOnlyAffectsNextOccurrences() {
+        RecurringExpense streaming = streaming(TODAY, "5.00");
+        when(recurringRepository.findByGroupIdOrderByIdAsc(1L)).thenReturn(List.of(streaming));
+        when(recurringRepository.findByIdAndGroupId(5L, 1L)).thenReturn(Optional.of(streaming));
+        ExpenseResponse before = service.runDue(1L).getFirst();
+
+        RecurringExpenseResponse response = service.changeExchangeRate(1L, 5L, new BigDecimal("6.00"));
+
+        assertThat(before.amount()).isEqualByComparingTo("79.95");
+        assertThat(response.exchangeRate()).isEqualByComparingTo("6.00");
+        assertThat(response.convertedAmount()).isEqualByComparingTo("95.94");
+    }
+
+    @Test
+    void cannotChangeRateOfTemplateInGroupCurrency() {
+        when(recurringRepository.findByIdAndGroupId(4L, 1L)).thenReturn(Optional.of(recurring(TODAY)));
+
+        assertThatThrownBy(() -> service.changeExchangeRate(1L, 4L, BigDecimal.TEN))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("moeda do grupo");
+    }
+
+    @Test
+    void rejectsRateThatConvertsBelowOneCent() {
+        when(recurringRepository.findByIdAndGroupId(5L, 1L)).thenReturn(Optional.of(streaming(TODAY, "5.00")));
+
+        assertThatThrownBy(() -> service.changeExchangeRate(1L, 5L, new BigDecimal("0.000001")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("centavo");
+    }
+
+    @Test
     void deleteFailsWhenTemplateIsFromAnotherGroup() {
         when(recurringRepository.findByIdAndGroupId(9L, 1L)).thenReturn(Optional.empty());
 
@@ -170,6 +235,21 @@ class RecurringExpenseServiceTest {
         return new RecurringExpense(group, "Aluguel", new BigDecimal("900.00"), TestData.member(group, 1L),
                 SplitType.EQUAL, ExpenseCategory.BILLS, RecurrenceFrequency.MONTHLY, startOn, null,
                 List.of(new RecurringShare(1L, null), new RecurringShare(2L, null), new RecurringShare(3L, null)));
+    }
+
+    private RecurringExpense streaming(LocalDate startOn, String rate) {
+        RecurringExpense streaming = new RecurringExpense(group, "Streaming", new BigDecimal("15.99"),
+                TestData.member(group, 1L), SplitType.EQUAL, ExpenseCategory.LEISURE, RecurrenceFrequency.MONTHLY,
+                startOn, null,
+                List.of(new RecurringShare(1L, null), new RecurringShare(2L, null), new RecurringShare(3L, null)));
+        streaming.chargeInForeignCurrency("USD", new BigDecimal(rate));
+        return streaming;
+    }
+
+    private static CreateRecurringExpenseRequest foreignRequest(String currency, BigDecimal rate) {
+        return new CreateRecurringExpenseRequest("Streaming", new BigDecimal("15.99"), 1L, SplitType.EQUAL,
+                ExpenseCategory.LEISURE, RecurrenceFrequency.MONTHLY, TODAY, null,
+                List.of(new ShareRequest(1L, null), new ShareRequest(2L, null), new ShareRequest(3L, null)), currency, rate);
     }
 
     private static CreateRecurringExpenseRequest request(LocalDate startOn, LocalDate endOn, ShareRequest... shares) {
