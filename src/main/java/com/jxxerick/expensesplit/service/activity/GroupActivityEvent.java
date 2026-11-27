@@ -63,11 +63,14 @@ public record GroupActivityEvent(Long groupId, ActivityType type, String summary
                 expense.getAmount(), expense.getId());
     }
 
+    /** Same two-value format as expenses: "Bruno pagou US$ 10.00 (R$ 54.00) para Ana". */
     public static GroupActivityEvent settlementRecorded(Settlement settlement) {
+        String local = money(settlement.getGroup().getCurrency(), settlement.getAmount());
+        String paid = settlement.isForeign()
+                ? "%s (%s)".formatted(money(settlement.getOriginalCurrency(), settlement.getOriginalAmount()), local)
+                : local;
         return new GroupActivityEvent(settlement.getGroup().getId(), ActivityType.SETTLEMENT_RECORDED,
-                "%s pagou %s para %s".formatted(settlement.getFrom().getName(),
-                        money(settlement.getGroup().getCurrency(), settlement.getAmount()),
-                        settlement.getTo().getName()),
+                "%s pagou %s para %s".formatted(settlement.getFrom().getName(), paid, settlement.getTo().getName()),
                 settlement.getAmount(), settlement.getId());
     }
 

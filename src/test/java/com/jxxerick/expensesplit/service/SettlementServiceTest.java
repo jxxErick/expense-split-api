@@ -1,6 +1,7 @@
 package com.jxxerick.expensesplit.service;
 
 import com.jxxerick.expensesplit.dto.CreateSettlementRequest;
+import com.jxxerick.expensesplit.dto.ExpenseResponse;
 import com.jxxerick.expensesplit.dto.SettlementResponse;
 import com.jxxerick.expensesplit.exception.BusinessException;
 import com.jxxerick.expensesplit.exception.ResourceNotFoundException;
@@ -161,6 +162,74 @@ class SettlementServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("Todos os saldos do grupo já estão zerados");
         verify(settlementRepository, never()).save(any());
+    }
+
+    @Test
+    void convertsForeignSettlementIntoGroupCurrency() {
+        givenBalances("60.00", "-10.00", "-50.00");
+        when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        SettlementResponse response = settlementService.create(1L, foreign(3L, 1L, "5.00", "usd", "5.40"));
+
+        assertThat(response.amount()).isEqualByComparingTo("27.00");
+        assertThat(response.foreign()).isEqualTo(new ExpenseResponse.ForeignAmountResponse("USD",
+                new BigDecimal("5.00"), new BigDecimal("5.40")));
+        verify(events).publishEvent(new GroupActivityEvent(1L, ActivityType.SETTLEMENT_RECORDED,
+                "Carla pagou US$ 5.00 (R$ 27.00) para Ana", new BigDecimal("27.00"), null));
+    }
+
+    @Test
+    void foreignAmountOneCentAwayPaysTheDebtOffExactly() {
+        givenBalances("60.00", "-10.00", "-50.00");
+        when(settlementRepository.save(any(Settlement.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // 9.31 * 5.37 = 49.99 and 9.32 * 5.37 = 50.05: neither is 50.00, both are within one US cent
+        assertThat(settlementService.create(1L, foreign(3L, 1L, "9.31", "USD", "5.37")).amount())
+                .isEqualByComparingTo("50.00");
+        assertThat(settlementService.create(1L, foreign(3L, 1L, "9.32", "USD", "5.37")).amount())
+                .isEqualByComparingTo("50.00");
+    }
+
+    @Test
+    void rejectsForeignAmountAboveDebtShowingBothLimits() {
+        givenBalances("60.00", "-10.00", "-50.00");
+
+        assertThatThrownBy(() -> settlementService.create(1L, foreign(2L, 1L, "3.00", "USD", "5.40")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("O valor máximo desse acerto é R$ 10.00 (US$ 1.85 nessa cotação)");
+        verify(settlementRepository, never()).save(any());
+    }
+
+    @Test
+    void requiresRateForForeignCurrency() {
+        givenBalances("60.00", "-10.00", "-50.00");
+
+        assertThatThrownBy(() -> settlementService.create(1L, foreign(3L, 1L, "5.00", "EUR", null)))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Informe a cotação de EUR para BRL");
+    }
+
+    @Test
+    void rejectsRateForGroupCurrency() {
+        givenBalances("60.00", "-10.00", "-50.00");
+
+        assertThatThrownBy(() -> settlementService.create(1L, foreign(3L, 1L, "5.00", "brl", "1.00")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("A cotação só vale para acertos em outra moeda");
+    }
+
+    @Test
+    void rejectsUnknownCurrency() {
+        givenBalances("60.00", "-10.00", "-50.00");
+
+        assertThatThrownBy(() -> settlementService.create(1L, foreign(3L, 1L, "5.00", "XYZ", "1.00")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("Moeda desconhecida: XYZ");
+    }
+
+    private static CreateSettlementRequest foreign(Long from, Long to, String amount, String currency, String rate) {
+        return new CreateSettlementRequest(from, to, new BigDecimal(amount), null, currency,
+                rate == null ? null : new BigDecimal(rate));
     }
 
     private void givenBalances(String ana, String bruno, String carla) {
